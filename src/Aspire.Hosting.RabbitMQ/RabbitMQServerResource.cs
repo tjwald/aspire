@@ -114,5 +114,6 @@ public class RabbitMQServerResource : ContainerResource, IResourceWithConnection
     }
 
     internal List<RabbitMQVirtualHostResource> VirtualHosts { get; } = [];
+    internal HashSet<string> EnabledPlugins { get; } = new(StringComparer.Ordinal);
     internal bool HasPluginFileCallback { get; set; }
 }

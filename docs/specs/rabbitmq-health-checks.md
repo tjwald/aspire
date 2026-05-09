@@ -27,9 +27,9 @@ If the broker call fails, the resource transitions to `FailedToStart`.
 Resources that have not yet been reached by the provisioner remain in `Starting`.
 
 **Health signal** (`ProvisionedTask` — a read-only `Task`):
-A gate the health check awaits. Pending means provisioning has not completed yet (health check
-returns `Degraded`). Completed means provisioning succeeded and the live probe can run.
-Faulted means provisioning failed (health check returns `Unhealthy`).
+A gate the health check reads synchronously. Pending means provisioning has not completed yet
+(health check returns `Unhealthy`). Completed means provisioning succeeded and the live probe
+can run. Faulted means provisioning failed (health check returns `Unhealthy`).
 
 These two channels are intentionally separate: lifecycle state is visible in the Aspire dashboard
 resource list; health state is visible in the health check panel and gates `WaitFor` dependents.
@@ -55,7 +55,7 @@ queue's health check reports `Unhealthy`. Sibling queues, exchanges, and shovels
 
 When a vhost fails to create, the provisioner returns early and child resources are never reached.
 Children remain in `Starting` with `ProvisionedTask` still pending — the health check returns
-`Degraded` ("provisioning in progress"), which is semantically correct: provisioning never ran.
+`Unhealthy` ("provisioning has not started yet"), which is semantically correct: provisioning never ran.
 There is no cascade-fault of children; `FailedToStart` is reserved for resources whose own
 provisioning attempt was made and failed.
 
@@ -63,10 +63,10 @@ provisioning attempt was made and failed.
 
 | Situation | Lifecycle state | Health check result |
 |---|---|---|
-| Provisioner has not reached this resource yet | `Starting` | `Degraded` |
-| Provisioning succeeded | `Running` | `Degraded` → `Healthy` after live probe |
+| Provisioner has not reached this resource yet | `Starting` | `Unhealthy` |
+| Provisioning succeeded | `Running` | `Healthy` after live probe |
 | Provisioning failed | `FailedToStart` | `Unhealthy` |
-| Exchange declared; bindings in progress | `Running` | `Degraded` |
+| Exchange declared; bindings in progress | `Running` | `Unhealthy` |
 | Exchange declared; bindings failed | `Running` | `Unhealthy` |
 
 ### Exchange is a special case: two-phase provisioning

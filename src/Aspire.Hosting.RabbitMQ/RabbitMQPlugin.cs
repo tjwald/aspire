@@ -9,49 +9,49 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 public enum RabbitMQPlugin
 {
-    /// <summary>The <c>rabbitmq_management</c> plugin, which provides the HTTP-based management API and UI.</summary>
+    /// <summary>The <c>rabbitmq_management</c> plugin.</summary>
     Management,
 
-    /// <summary>The <c>rabbitmq_management_agent</c> plugin, which is required by the management plugin on every node.</summary>
+    /// <summary>The <c>rabbitmq_management_agent</c> plugin.</summary>
     ManagementAgent,
 
-    /// <summary>The <c>rabbitmq_web_dispatch</c> plugin, which provides the HTTP listener used by the management plugin.</summary>
+    /// <summary>The <c>rabbitmq_web_dispatch</c> plugin.</summary>
     WebDispatch,
 
-    /// <summary>The <c>rabbitmq_shovel</c> plugin, which enables dynamic shovels for moving messages between brokers.</summary>
+    /// <summary>The <c>rabbitmq_shovel</c> plugin.</summary>
     Shovel,
 
-    /// <summary>The <c>rabbitmq_shovel_management</c> plugin, which adds shovel management to the HTTP API.</summary>
+    /// <summary>The <c>rabbitmq_shovel_management</c> plugin.</summary>
     ShovelManagement,
 
-    /// <summary>The <c>rabbitmq_federation</c> plugin, which enables federated exchanges and queues.</summary>
+    /// <summary>The <c>rabbitmq_federation</c> plugin.</summary>
     Federation,
 
-    /// <summary>The <c>rabbitmq_federation_management</c> plugin, which adds federation management to the HTTP API.</summary>
+    /// <summary>The <c>rabbitmq_federation_management</c> plugin.</summary>
     FederationManagement,
 
-    /// <summary>The <c>rabbitmq_stream</c> plugin, which enables the RabbitMQ Streams protocol.</summary>
+    /// <summary>The <c>rabbitmq_stream</c> plugin.</summary>
     Stream,
 
-    /// <summary>The <c>rabbitmq_stream_management</c> plugin, which adds stream management to the HTTP API.</summary>
+    /// <summary>The <c>rabbitmq_stream_management</c> plugin.</summary>
     StreamManagement,
 
-    /// <summary>The <c>rabbitmq_mqtt</c> plugin, which enables the MQTT protocol adapter.</summary>
+    /// <summary>The <c>rabbitmq_mqtt</c> plugin.</summary>
     Mqtt,
 
-    /// <summary>The <c>rabbitmq_stomp</c> plugin, which enables the STOMP protocol adapter.</summary>
+    /// <summary>The <c>rabbitmq_stomp</c> plugin.</summary>
     Stomp,
 
-    /// <summary>The <c>rabbitmq_web_mqtt</c> plugin, which enables MQTT over WebSockets.</summary>
+    /// <summary>The <c>rabbitmq_web_mqtt</c> plugin.</summary>
     WebMqtt,
 
-    /// <summary>The <c>rabbitmq_web_stomp</c> plugin, which enables STOMP over WebSockets.</summary>
+    /// <summary>The <c>rabbitmq_web_stomp</c> plugin.</summary>
     WebStomp,
 
-    /// <summary>The <c>rabbitmq_prometheus</c> plugin, which exposes metrics in Prometheus format.</summary>
+    /// <summary>The <c>rabbitmq_prometheus</c> plugin.</summary>
     Prometheus,
 
-    /// <summary>The <c>rabbitmq_amqp1_0</c> plugin, which enables the AMQP 1.0 protocol adapter.</summary>
+    /// <summary>The <c>rabbitmq_amqp1_0</c> plugin.</summary>
     Amqp10
 }
 

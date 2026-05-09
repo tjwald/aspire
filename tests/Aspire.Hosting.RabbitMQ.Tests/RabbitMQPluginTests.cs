@@ -9,27 +9,25 @@ namespace Aspire.Hosting.RabbitMQ.Tests;
 public class RabbitMQPluginTests
 {
     [Fact]
-    public void WithPlugin_Enum_AddsAnnotation()
+    public void WithPlugin_Enum_AddsToEnabledPlugins()
     {
         var builder = DistributedApplication.CreateBuilder();
         var server = builder.AddRabbitMQ("rabbit");
 
         server.WithPlugin(RabbitMQPlugin.Prometheus);
 
-        var annotations = server.Resource.Annotations.OfType<RabbitMQPluginAnnotation>();
-        Assert.Contains(annotations, a => a.PluginName == "rabbitmq_prometheus");
+        Assert.Contains("rabbitmq_prometheus", server.Resource.EnabledPlugins);
     }
 
     [Fact]
-    public void WithPlugin_String_AddsAnnotation()
+    public void WithPlugin_String_AddsToEnabledPlugins()
     {
         var builder = DistributedApplication.CreateBuilder();
         var server = builder.AddRabbitMQ("rabbit");
 
         server.WithPlugin("my_custom_plugin");
 
-        var annotations = server.Resource.Annotations.OfType<RabbitMQPluginAnnotation>();
-        Assert.Contains(annotations, a => a.PluginName == "my_custom_plugin");
+        Assert.Contains("my_custom_plugin", server.Resource.EnabledPlugins);
     }
 
     [Fact]

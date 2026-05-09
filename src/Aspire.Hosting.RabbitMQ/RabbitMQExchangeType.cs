@@ -8,23 +8,15 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 public enum RabbitMQExchangeType
 {
-    /// <summary>
-    /// A direct exchange.
-    /// </summary>
+    /// <summary>Direct exchange type.</summary>
     Direct,
 
-    /// <summary>
-    /// A topic exchange.
-    /// </summary>
+    /// <summary>Topic exchange type.</summary>
     Topic,
 
-    /// <summary>
-    /// A fanout exchange.
-    /// </summary>
+    /// <summary>Fanout exchange type.</summary>
     Fanout,
 
-    /// <summary>
-    /// A headers exchange.
-    /// </summary>
+    /// <summary>Headers exchange type.</summary>
     Headers
 }

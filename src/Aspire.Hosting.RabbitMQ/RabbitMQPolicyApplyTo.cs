@@ -8,18 +8,12 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 public enum RabbitMQPolicyApplyTo
 {
-    /// <summary>
-    /// The policy applies to queues only.
-    /// </summary>
+    /// <summary>The policy applies to queues only.</summary>
     Queues,
 
-    /// <summary>
-    /// The policy applies to exchanges only.
-    /// </summary>
+    /// <summary>The policy applies to exchanges only.</summary>
     Exchanges,
 
-    /// <summary>
-    /// The policy applies to both queues and exchanges.
-    /// </summary>
+    /// <summary>The policy applies to both queues and exchanges.</summary>
     All,
 }

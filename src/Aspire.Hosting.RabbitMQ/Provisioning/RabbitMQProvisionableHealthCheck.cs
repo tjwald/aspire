@@ -10,57 +10,46 @@ namespace Aspire.Hosting.RabbitMQ.Provisioning;
 /// Shared <see cref="IHealthCheck"/> implementation for all RabbitMQ child resources (virtual hosts, queues, exchanges, shovels, policies).
 /// </summary>
 /// <remarks>
-/// The check proceeds in four stages: returns <see cref="HealthStatus.Degraded"/> while provisioning is in progress,
-/// then awaits <see cref="IRabbitMQProvisionable.ProvisionedTask"/>, then awaits each
-/// <see cref="IRabbitMQProvisionable.HealthDependencies"/> task, and finally calls
+/// The check proceeds in three stages: returns <see cref="HealthStatus.Unhealthy"/> if provisioning has not started or failed,
+/// then checks each <see cref="IRabbitMQProvisionable.HealthDependencies"/> task the same way, and finally calls
 /// <see cref="IRabbitMQProvisionable.ProbeAsync"/> for a live broker verification.
 /// </remarks>
 internal sealed class RabbitMQProvisionableHealthCheck(IRabbitMQProvisionable self, IRabbitMQProvisioningClient client, ILogger<RabbitMQProvisionableHealthCheck> logger) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        // Stage 1: return Degraded immediately if provisioning hasn't completed yet
+        // Stage 1: own provisioning — read task state synchronously (no blocking wait)
         if (!self.ProvisionedTask.IsCompleted)
         {
-            return HealthCheckResult.Degraded($"Provisioning of '{self.Name}' is in progress.");
+            return HealthCheckResult.Unhealthy($"Provisioning of '{self.Name}' has not started yet.");
         }
 
-        // Stage 2: own provisioning
-        try
+        if (self.ProvisionedTask.IsFaulted)
         {
-            await self.ProvisionedTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            var message = $"Provisioning of '{self.Name}' failed: {ex.Message}";
+            var ex = self.ProvisionedTask.Exception?.InnerException ?? self.ProvisionedTask.Exception;
+            var message = $"Provisioning of '{self.Name}' failed: {ex?.Message}";
             logger.LogWarning(ex, "{Message}", message);
             return HealthCheckResult.Unhealthy(message, ex);
         }
 
-        // Stage 3: health dependencies (e.g. policies that apply to this queue/exchange)
+        // Stage 2: health dependencies (e.g. policies that apply to this queue/exchange)
         foreach (var dep in self.HealthDependencies)
         {
-            try
+            if (!dep.ProvisionedTask.IsCompleted)
             {
-                await dep.ProvisionedTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+                return HealthCheckResult.Unhealthy($"Dependent resource '{dep.Name}' has not started provisioning yet.");
             }
-            catch (OperationCanceledException)
+
+            if (dep.ProvisionedTask.IsFaulted)
             {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                var message = $"Dependent resource '{dep.Name}' failed to provision: {ex.Message}";
+                var ex = dep.ProvisionedTask.Exception?.InnerException ?? dep.ProvisionedTask.Exception;
+                var message = $"Dependent resource '{dep.Name}' failed to provision: {ex?.Message}";
                 logger.LogWarning(ex, "{Message}", message);
                 return HealthCheckResult.Unhealthy(message, ex);
             }
         }
 
-        // Stage 4: live broker probe
+        // Stage 3: live broker probe
         var probe = await self.ProbeAsync(client, cancellationToken).ConfigureAwait(false);
         if (!probe.IsHealthy)
         {

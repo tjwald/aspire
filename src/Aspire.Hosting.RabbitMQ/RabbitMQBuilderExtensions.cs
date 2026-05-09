@@ -335,6 +335,17 @@ public static class RabbitMQBuilderExtensions
         => WithPropertiesCore(builder, configure);
 
     /// <summary>
+    /// Configures additional policy settings such as <see cref="RabbitMQPolicyResource.AdditionalArguments"/>.
+    /// To configure typed queue or exchange arguments, use <see cref="WithQueueArguments{T}"/> or <see cref="WithExchangeArguments{T}"/> instead.
+    /// </summary>
+    /// <param name="builder">The resource builder.</param>
+    /// <param name="configure">The configuration action.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withPolicyProperties", MethodName = "withProperties", RunSyncOnBackgroundThread = true)]
+    public static IResourceBuilder<RabbitMQPolicyResource> WithProperties(this IResourceBuilder<RabbitMQPolicyResource> builder, Action<RabbitMQPolicyResource> configure)
+        => WithPropertiesCore(builder, configure);
+
+    /// <summary>
     /// Adds a binding from an exchange to a destination.
     /// </summary>
     /// <typeparam name="TDestination">The type of the destination resource.</typeparam>
@@ -704,17 +715,6 @@ public static class RabbitMQBuilderExtensions
     }
 
     /// <summary>
-    /// Configures additional policy settings such as <see cref="RabbitMQPolicyResource.AdditionalArguments"/>.
-    /// To configure typed queue or exchange arguments, use <see cref="WithQueueArguments{T}"/> or <see cref="WithExchangeArguments{T}"/> instead.
-    /// </summary>
-    /// <param name="builder">The resource builder.</param>
-    /// <param name="configure">The configuration action.</param>
-    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
-    [AspireExport("withPolicyProperties", MethodName = "withProperties", RunSyncOnBackgroundThread = true)]
-    public static IResourceBuilder<RabbitMQPolicyResource> WithProperties(this IResourceBuilder<RabbitMQPolicyResource> builder, Action<RabbitMQPolicyResource> configure)
-        => WithPropertiesCore(builder, configure);
-
-    /// <summary>
     /// Enables a RabbitMQ plugin.
     /// </summary>
     /// <param name="builder">The RabbitMQ server resource builder.</param>
@@ -743,17 +743,14 @@ public static class RabbitMQBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrWhiteSpace(pluginName);
 
-        builder.WithAnnotation(new RabbitMQPluginAnnotation(pluginName));
+        builder.Resource.EnabledPlugins.Add(pluginName);
 
         if (!builder.Resource.HasPluginFileCallback)
         {
             builder.Resource.HasPluginFileCallback = true;
             builder.WithContainerFiles("/etc/rabbitmq", (context, ct) =>
             {
-                var plugins = builder.Resource.Annotations
-                    .OfType<RabbitMQPluginAnnotation>()
-                    .Select(a => a.PluginName)
-                    .Distinct(StringComparer.Ordinal)
+                var plugins = builder.Resource.EnabledPlugins
                     .OrderBy(x => x, StringComparer.Ordinal);
 
                 var content = $"[{string.Join(",", plugins)}].";

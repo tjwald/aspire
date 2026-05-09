@@ -35,7 +35,7 @@ public class RabbitMQProvisionableHealthCheckTests
     // ── RabbitMQProvisionableHealthCheck ─────────────────────────────────────
 
     [Fact]
-    public async Task CheckHealthAsync_SelfPending_ReturnsDegraded()
+    public async Task CheckHealthAsync_SelfPending_ReturnsUnhealthy()
     {
         var (_, vhost) = BuildVhost();
         var client = new FakeRabbitMQProvisioningClient();
@@ -44,8 +44,8 @@ public class RabbitMQProvisionableHealthCheckTests
         // ProvisionedTask is pending — no ApplyAsync called yet.
         var result = await check.CheckHealthAsync(MakeContext());
 
-        Assert.Equal(HealthStatus.Degraded, result.Status);
-        Assert.Contains("in progress", result.Description);
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("has not started yet", result.Description);
     }
 
     [Fact]

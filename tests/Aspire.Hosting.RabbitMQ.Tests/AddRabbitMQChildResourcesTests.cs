@@ -237,9 +237,8 @@ public class AddRabbitMQChildResourcesTests
         var endpoints = server.Resource.Annotations.OfType<EndpointAnnotation>();
         Assert.Contains(endpoints, e => e.Name == RabbitMQServerResource.ManagementEndpointName);
 
-        var pluginAnnotations = server.Resource.Annotations.OfType<RabbitMQPluginAnnotation>();
-        Assert.Contains(pluginAnnotations, a => a.PluginName == "rabbitmq_shovel");
-        Assert.Contains(pluginAnnotations, a => a.PluginName == "rabbitmq_shovel_management");
+        Assert.Contains("rabbitmq_shovel", server.Resource.EnabledPlugins);
+        Assert.Contains("rabbitmq_shovel_management", server.Resource.EnabledPlugins);
     }
 
     [Fact]
