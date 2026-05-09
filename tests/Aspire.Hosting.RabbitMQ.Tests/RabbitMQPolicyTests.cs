@@ -4,8 +4,9 @@
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.RabbitMQ.Provisioning;
 using Aspire.Hosting.RabbitMQ.Tests.TestServices;
-using Microsoft.Extensions.DependencyInjection;
+using Aspire.Hosting.Tests.Utils;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Aspire.Hosting.RabbitMQ.Tests;
 
@@ -196,82 +197,13 @@ public class RabbitMQPolicyTests
         Assert.Equal(2, queue.Resource.AppliedPolicies.Count);
     }
 
-    // ── Provisioner ordering ──────────────────────────────────────────────────
-
-    [Fact]
-    public async Task ProvisionTopologyAsync_PoliciesAppliedBeforeEntities()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var server = builder.AddRabbitMQ("rabbit")
-            .WithEndpoint(RabbitMQServerResource.PrimaryEndpointName, e => e.AllocatedEndpoint = new AllocatedEndpoint(e, "localhost", 5672));
-        var vhost = server.AddVirtualHost("myvhost");
-        var queue = vhost.AddQueue("orders-queue", "orders");
-        vhost.AddPolicy("ttl-policy", "^orders");
-
-        var fakeClient = new FakeRabbitMQProvisioningClient();
-        builder.Services.AddKeyedSingleton<IRabbitMQProvisioningClient>(server.Resource.Name, fakeClient);
-
-        using var app = builder.Build();
-        await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
-
-        var policyIndex = fakeClient.Calls.FindIndex(c => c.StartsWith("PutPolicyAsync(myvhost, ttl-policy,"));
-        var queueIndex = fakeClient.Calls.FindIndex(c => c.StartsWith("DeclareQueueAsync(myvhost, orders,"));
-
-        Assert.True(policyIndex >= 0, "PutPolicyAsync should have been called");
-        Assert.True(queueIndex >= 0, "DeclareQueueAsync should have been called");
-        Assert.True(policyIndex < queueIndex, "Policy must be applied before queue declaration");
-    }
-
-    [Fact]
-    public async Task ProvisionTopologyAsync_PolicyFails_PolicyTcsFaulted_QueueTcsUnaffected()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var server = builder.AddRabbitMQ("rabbit")
-            .WithEndpoint(RabbitMQServerResource.PrimaryEndpointName, e => e.AllocatedEndpoint = new AllocatedEndpoint(e, "localhost", 5672));
-        var vhost = server.AddVirtualHost("myvhost");
-        var queue = vhost.AddQueue("orders-queue", "orders");
-        var policyBuilder = vhost.AddPolicy("ttl-policy", "^orders");
-
-        var fakeClient = new FakeRabbitMQProvisioningClient();
-        fakeClient.FailPolicyNames.Add("ttl-policy");
-        builder.Services.AddKeyedSingleton<IRabbitMQProvisioningClient>(server.Resource.Name, fakeClient);
-
-        using var app = builder.Build();
-        await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
-
-        Assert.True(policyBuilder.Resource.ProvisionedTask.IsFaulted, "Policy TCS should be faulted");
-        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully, "Queue TCS should succeed independently");
-    }
-
-    [Fact]
-    public async Task ProvisionTopologyAsync_VhostFails_PolicyTcsStaysPending()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var server = builder.AddRabbitMQ("rabbit")
-            .WithEndpoint(RabbitMQServerResource.PrimaryEndpointName, e => e.AllocatedEndpoint = new AllocatedEndpoint(e, "localhost", 5672));
-        var vhost = server.AddVirtualHost("myvhost");
-        var policyBuilder = vhost.AddPolicy("ttl-policy", "^orders");
-
-        var failingClient = new FailingFakeRabbitMQProvisioningClient();
-        builder.Services.AddKeyedSingleton<IRabbitMQProvisioningClient>(server.Resource.Name, failingClient);
-
-        using var app = builder.Build();
-        await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
-
-        // Vhost itself is faulted
-        Assert.True(vhost.Resource.ProvisionedTask.IsFaulted);
-        // Children stay pending (Starting) — no cascade fault in the new design
-        Assert.False(policyBuilder.Resource.ProvisionedTask.IsCompleted, "Policy TCS should stay pending when vhost fails");
-    }
-
     // ── Health dependency ─────────────────────────────────────────────────────
 
     [Fact]
-    public async Task HealthCheck_PolicyFails_MatchingQueueUnhealthy()
+    public async Task HealthCheck_PolicyNotHealthy_MatchingQueueUnhealthy()
     {
         var builder = DistributedApplication.CreateBuilder();
-        var server = builder.AddRabbitMQ("rabbit")
-            .WithEndpoint(RabbitMQServerResource.PrimaryEndpointName, e => e.AllocatedEndpoint = new AllocatedEndpoint(e, "localhost", 5672));
+        var server = builder.AddRabbitMQ("rabbit");
         var vhost = server.AddVirtualHost("myvhost");
         var queue = vhost.AddQueue("orders-queue", "orders");
         var policyBuilder = vhost.AddPolicy("ttl-policy", "^orders");
@@ -279,22 +211,21 @@ public class RabbitMQPolicyTests
         // Simulate BeforeStartEvent resolution
         RabbitMQBuilderExtensions.ResolveAndApplyPolicyMatches(policyBuilder.Resource, vhost.Resource, policyBuilder);
 
-        var fakeClient = new FakeRabbitMQProvisioningClient();
-        fakeClient.FailPolicyNames.Add("ttl-policy");
-        builder.Services.AddKeyedSingleton<IRabbitMQProvisioningClient>(server.Resource.Name, fakeClient);
-
-        using var app = builder.Build();
-        await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
-
-        // Queue itself provisioned OK, but its policy failed
-        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully);
-        Assert.True(policyBuilder.Resource.ProvisionedTask.IsFaulted);
-
         // The queue's HealthDependencies should include the policy
         Assert.Single(queue.Resource.AppliedPolicies);
 
-        // Simulate the health check: queue's own TCS is OK, but dependency (policy) is faulted
-        var check = new RabbitMQProvisionableHealthCheck(queue.Resource, fakeClient, Microsoft.Extensions.Logging.Abstractions.NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
+        // Simulate: queue is Running+Healthy, policy is Running but its own health check is Unhealthy.
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(queue.Resource, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("queue_check", HealthStatus.Healthy, null, null)]));
+        // Policy is Running but health check reports Unhealthy — HealthStatus will not be Healthy.
+        await notifications.PublishUpdateAsync(policyBuilder.Resource, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("policy_check", HealthStatus.Unhealthy, "probe failed", null)]));
+
+        var fakeClient = new FakeRabbitMQProvisioningClient();
+        var check = new RabbitMQProvisionableHealthCheck(queue.Resource, fakeClient, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
         var context = new HealthCheckContext
         {
             Registration = new HealthCheckRegistration("test", _ => null!, null, null)
@@ -303,16 +234,15 @@ public class RabbitMQPolicyTests
 
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
         Assert.Contains("ttl-policy", result.Description);
+        Assert.Contains("not yet healthy", result.Description);
     }
 
     [Fact]
-    public async Task HealthCheck_PolicyFails_NonMatchingQueueHealthy()
+    public async Task HealthCheck_PolicyNotHealthy_NonMatchingQueueHealthy()
     {
         var builder = DistributedApplication.CreateBuilder();
-        var server = builder.AddRabbitMQ("rabbit")
-            .WithEndpoint(RabbitMQServerResource.PrimaryEndpointName, e => e.AllocatedEndpoint = new AllocatedEndpoint(e, "localhost", 5672));
+        var server = builder.AddRabbitMQ("rabbit");
         var vhost = server.AddVirtualHost("myvhost");
-        var matchingQueue = vhost.AddQueue("orders-queue", "orders");
         var nonMatchingQueue = vhost.AddQueue("payments-queue", "payments");
         var policyBuilder = vhost.AddPolicy("ttl-policy", "^orders");
 
@@ -322,14 +252,17 @@ public class RabbitMQPolicyTests
         // Non-matching queue has no policy dependency
         Assert.Empty(nonMatchingQueue.Resource.AppliedPolicies);
 
+        // Simulate: non-matching queue is Running+Healthy, policy is unhealthy (irrelevant to this queue).
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(nonMatchingQueue.Resource, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("queue_check", HealthStatus.Healthy, null, null)]));
+        await notifications.PublishUpdateAsync(policyBuilder.Resource, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("policy_check", HealthStatus.Unhealthy, "probe failed", null)]));
+
         var fakeClient = new FakeRabbitMQProvisioningClient();
-        fakeClient.FailPolicyNames.Add("ttl-policy");
-        builder.Services.AddKeyedSingleton<IRabbitMQProvisioningClient>(server.Resource.Name, fakeClient);
-
-        using var app = builder.Build();
-        await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
-
-        var check = new RabbitMQProvisionableHealthCheck(nonMatchingQueue.Resource, fakeClient, Microsoft.Extensions.Logging.Abstractions.NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
+        var check = new RabbitMQProvisionableHealthCheck(nonMatchingQueue.Resource, fakeClient, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
         var context = new HealthCheckContext
         {
             Registration = new HealthCheckRegistration("test", _ => null!, null, null)

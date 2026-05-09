@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Aspire.Hosting.RabbitMQ.Provisioning;
-using Microsoft.Extensions.Logging;
 
 namespace Aspire.Hosting.ApplicationModel;
 
@@ -94,79 +93,6 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
         VirtualHost.CombineProperties([
             new("ExchangeName", ReferenceExpression.Create($"{ExchangeName}")),
         ]);
-
-    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    internal override Task ProvisionedTask => _tcs.Task;
-
-    /// <summary>
-    /// Declares the exchange on the broker and publishes <c>Running</c>.
-    /// </summary>
-    /// <remarks>
-    /// The provisioned task is not signalled here — that happens after bindings are applied in <see cref="ApplyBindingsAsync"/>.
-    /// On failure, faults the provisioned task and publishes <c>FailedToStart</c>.
-    /// </remarks>
-    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
-    {
-        await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
-        try
-        {
-            var typeString = ExchangeType.ToString().ToLowerInvariant();
-            var args = new Dictionary<string, object?>();
-
-            ExchangeArguments.FlattenInto(args, $"Exchange '{ExchangeName}'");
-
-            await client.DeclareExchangeAsync(
-                VirtualHost.VirtualHostName,
-                ExchangeName,
-                typeString,
-                Durable,
-                AutoDelete,
-                args.Count > 0 ? args : null,
-                cancellationToken).ConfigureAwait(false);
-
-            // Exchange IS running — it exists on the broker. Bindings are phase 3.
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Running }).ConfigureAwait(false);
-            // ProvisionedTask stays pending until ApplyBindingsAsync completes.
-        }
-        catch (Exception ex)
-        {
-            _tcs.TrySetException(ex);
-            resourceLogger.GetLogger(Name).LogError(ex, "Failed to declare exchange '{Exchange}'.", ExchangeName);
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.FailedToStart }).ConfigureAwait(false);
-        }
-    }
-
-    /// <summary>
-    /// Applies all bindings for this exchange and signals the provisioned task.
-    /// </summary>
-    /// <remarks>
-    /// On success, <see cref="ProvisionedTask"/> completes and the lifecycle stays <c>Running</c>.
-    /// On failure, the provisioned task is faulted but the lifecycle stays <c>Running</c> because the exchange itself was declared successfully.
-    /// </remarks>
-    internal async Task ApplyBindingsAsync(IRabbitMQProvisioningClient client, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
-    {
-        try
-        {
-            foreach (var binding in Bindings)
-            {
-                await binding.Destination.BindAsync(
-                    client,
-                    VirtualHost.VirtualHostName,
-                    ExchangeName,
-                    binding.RoutingKey,
-                    binding.MatchHeaders,
-                    cancellationToken).ConfigureAwait(false);
-            }
-
-            _tcs.TrySetResult();
-        }
-        catch (Exception ex)
-        {
-            _tcs.TrySetException(ex);
-            resourceLogger.GetLogger(Name).LogError(ex, "Failed to apply bindings for exchange '{Exchange}'.", ExchangeName);
-        }
-    }
 
     internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {

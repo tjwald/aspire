@@ -4,8 +4,8 @@
 using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.RabbitMQ.Provisioning;
 using Aspire.Hosting.RabbitMQ.Tests.TestServices;
+using Aspire.Hosting.Tests.Utils;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Aspire.Hosting.RabbitMQ.Tests;
@@ -25,77 +25,89 @@ public class RabbitMQProvisionableHealthCheckTests
     private static HealthCheckContext MakeContext() =>
         new() { Registration = new HealthCheckRegistration("test", _ => null!, null, null) };
 
-#pragma warning disable CS0618 // obsolete constructor is fine for tests
-    private static ResourceNotificationService MakeNotifications() =>
-        new(NullLogger<ResourceNotificationService>.Instance, new NullHostApplicationLifetime());
-#pragma warning restore CS0618
-
-    private static ResourceLoggerService MakeResourceLogger() => new();
-
     // ── RabbitMQProvisionableHealthCheck ─────────────────────────────────────
 
     [Fact]
-    public async Task CheckHealthAsync_SelfPending_ReturnsUnhealthy()
+    public async Task CheckHealthAsync_SelfNotRunning_ReturnsUnhealthy()
     {
         var (_, vhost) = BuildVhost();
         var client = new FakeRabbitMQProvisioningClient();
-        var check = new RabbitMQProvisionableHealthCheck(vhost, client, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
-
-        // ProvisionedTask is pending — no ApplyAsync called yet.
-        var result = await check.CheckHealthAsync(MakeContext());
-
-        Assert.Equal(HealthStatus.Unhealthy, result.Status);
-        Assert.Contains("has not started yet", result.Description);
-    }
-
-    [Fact]
-    public async Task CheckHealthAsync_SelfFaulted_ReturnsUnhealthy()
-    {
-        var (_, vhost) = BuildVhost();
-        var client = new FakeRabbitMQProvisioningClient();
-        var check = new RabbitMQProvisionableHealthCheck(vhost, client, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
-
-        // Drive the resource through ApplyAsync with a failing client to fault the TCS.
-        var failingClient = new FakeRabbitMQProvisioningClient();
-        failingClient.FailVirtualHostNames.Add("myvhost");
-        await vhost.ApplyAsync(failingClient, MakeNotifications(), MakeResourceLogger(), default);
+        // No state published — TryGetCurrentState returns false.
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        var check = new RabbitMQProvisionableHealthCheck(vhost, client, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
-        Assert.Contains("boom", result.Description);
+        Assert.Contains("not yet Running", result.Description);
     }
 
     [Fact]
-    public async Task CheckHealthAsync_DependencyFaulted_ReturnsUnhealthyWithDepName()
+    public async Task CheckHealthAsync_SelfWaiting_ReturnsUnhealthy()
+    {
+        var (_, vhost) = BuildVhost();
+        var client = new FakeRabbitMQProvisioningClient();
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(vhost, s => s with { State = KnownResourceStates.Waiting });
+        var check = new RabbitMQProvisionableHealthCheck(vhost, client, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
+
+        var result = await check.CheckHealthAsync(MakeContext());
+
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("not yet Running", result.Description);
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_SelfFailedToStart_ReturnsUnhealthy()
+    {
+        var (_, vhost) = BuildVhost();
+        var client = new FakeRabbitMQProvisioningClient();
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(vhost, s => s with { State = KnownResourceStates.FailedToStart });
+        var check = new RabbitMQProvisionableHealthCheck(vhost, client, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
+
+        var result = await check.CheckHealthAsync(MakeContext());
+
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Contains("not yet Running", result.Description);
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_DependencyNotHealthy_ReturnsUnhealthyWithDepName()
     {
         var (_, vhost) = BuildVhost();
         var queue = new RabbitMQQueueResource("myqueue", "myqueue", vhost);
         var client = new FakeRabbitMQProvisioningClient();
 
-        // Simulate a policy dependency by injecting a pre-faulted stub.
-        var dep = new StubProvisionable("mypolicy", Task.FromException(new DistributedApplicationException("policy failed")));
+        // Simulate a policy dependency that is Running but not yet Healthy.
+        var dep = new StubProvisionable("mypolicy");
 
-        var check = new RabbitMQProvisionableHealthCheckWithDeps(queue, [dep], client);
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        // queue is Running+Healthy, dep is Running but health check is Unhealthy.
+        await notifications.PublishUpdateAsync(queue, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("queue_check", HealthStatus.Healthy, null, null)]));
+        await notifications.PublishUpdateAsync(dep, s =>
+            (s with { State = KnownResourceStates.Running }).WithHealthReports(
+                [new HealthReportSnapshot("dep_check", HealthStatus.Unhealthy, "probe failed", null)]));
 
-        // Drive queue through ApplyAsync to complete its TCS.
-        await queue.ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
+        var check = new RabbitMQProvisionableHealthCheckWithDeps(queue, [dep], client, notifications);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
         Assert.Equal(HealthStatus.Unhealthy, result.Status);
         Assert.Contains("mypolicy", result.Description);
-        Assert.Contains("policy failed", result.Description);
+        Assert.Contains("not yet healthy", result.Description);
     }
 
     [Fact]
-    public async Task CheckHealthAsync_AllCompleteProbeHealthy_ReturnsHealthy()
+    public async Task CheckHealthAsync_AllRunningProbeHealthy_ReturnsHealthy()
     {
         var (_, vhost) = BuildVhost();
         var client = new FakeRabbitMQProvisioningClient();
-        var check = new RabbitMQProvisionableHealthCheck(vhost, client, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
-
-        await vhost.ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(vhost, s => s with { State = KnownResourceStates.Running });
+        var check = new RabbitMQProvisionableHealthCheck(vhost, client, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -103,16 +115,14 @@ public class RabbitMQProvisionableHealthCheckTests
     }
 
     [Fact]
-    public async Task CheckHealthAsync_AllCompleteProbeUnhealthy_ReturnsUnhealthy()
+    public async Task CheckHealthAsync_AllRunningProbeUnhealthy_ReturnsUnhealthy()
     {
         var (_, vhost) = BuildVhost();
         // Use a client that fails CanConnectAsync for the probe stage.
         var probeClient = new FakeRabbitMQProvisioningClient { CanConnect = false };
-        var check = new RabbitMQProvisionableHealthCheck(vhost, probeClient, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
-
-        // Use a separate client that succeeds for ApplyAsync.
-        var applyClient = new FakeRabbitMQProvisioningClient();
-        await vhost.ApplyAsync(applyClient, MakeNotifications(), MakeResourceLogger(), default);
+        var notifications = ResourceNotificationServiceTestHelpers.Create();
+        await notifications.PublishUpdateAsync(vhost, s => s with { State = KnownResourceStates.Running });
+        var check = new RabbitMQProvisionableHealthCheck(vhost, probeClient, notifications, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -230,53 +240,34 @@ public class RabbitMQProvisionableHealthCheckTests
     // ── Private test helpers ──────────────────────────────────────────────────
 
     /// <summary>
-    /// A minimal <see cref="RabbitMQProvisionableResource"/> stub used to inject a pre-completed or faulted
-    /// <see cref="RabbitMQProvisionableResource.ProvisionedTask"/> into tests without needing a real resource.
+    /// A minimal <see cref="RabbitMQProvisionableResource"/> stub with no special behaviour.
     /// </summary>
-    private sealed class StubProvisionable(string name, Task provisionedTask) : RabbitMQProvisionableResource(name)
-    {
-        internal override Task ProvisionedTask => provisionedTask;
-        internal override Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken ct) => Task.CompletedTask;
-    }
+    private sealed class StubProvisionable(string name) : RabbitMQProvisionableResource(name);
 
     /// <summary>
     /// Wraps <see cref="RabbitMQProvisionableHealthCheck"/> but injects explicit dependencies,
-    /// allowing tests to verify the dependency-awaiting stage without needing real policy resources.
+    /// allowing tests to verify the dependency-checking stage without needing real policy resources.
     /// </summary>
     private sealed class RabbitMQProvisionableHealthCheckWithDeps(
         RabbitMQProvisionableResource self,
         IEnumerable<RabbitMQProvisionableResource> deps,
-        IRabbitMQProvisioningClient client) : IHealthCheck
+        IRabbitMQProvisioningClient client,
+        ResourceNotificationService notifications) : IHealthCheck
     {
         public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
         {
-            try
+            if (!notifications.TryGetCurrentState(self.Name, out var evt) ||
+                evt.Snapshot.State?.Text != KnownResourceStates.Running)
             {
-                await self.ProvisionedTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return HealthCheckResult.Unhealthy($"Provisioning of '{self.Name}' failed: {ex.Message}", ex);
+                return HealthCheckResult.Unhealthy($"'{self.Name}' is not yet Running.");
             }
 
             foreach (var dep in deps)
             {
-                try
+                if (!notifications.TryGetCurrentState(dep.Name, out var depEvt) ||
+                    depEvt.Snapshot.HealthStatus != HealthStatus.Healthy)
                 {
-                    await dep.ProvisionedTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    return HealthCheckResult.Unhealthy(
-                        $"Dependent resource '{dep.Name}' failed to provision: {ex.Message}", ex);
+                    return HealthCheckResult.Unhealthy($"Dependency '{dep.Name}' is not yet healthy.");
                 }
             }
 
@@ -306,13 +297,5 @@ public class RabbitMQProvisionableHealthCheckTests
         public Task PutPolicyAsync(string vhost, string name, RabbitMQPolicyDefinition def, CancellationToken ct) => Task.CompletedTask;
         public Task<bool> PolicyExistsAsync(string vhost, string name, CancellationToken ct) => Task.FromResult(true);
         public ValueTask DisposeAsync() => default;
-    }
-
-    private sealed class NullHostApplicationLifetime : IHostApplicationLifetime
-    {
-        public CancellationToken ApplicationStarted => default;
-        public CancellationToken ApplicationStopping => default;
-        public CancellationToken ApplicationStopped => default;
-        public void StopApplication() { }
     }
 }

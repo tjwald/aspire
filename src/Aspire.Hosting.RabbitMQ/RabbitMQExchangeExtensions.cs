@@ -1,6 +1,12 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Collections.Concurrent;
+using Aspire.Hosting.RabbitMQ.Provisioning;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
+
 namespace Aspire.Hosting.ApplicationModel;
 
 /// <summary>
@@ -37,10 +43,88 @@ public static class RabbitMQExchangeExtensions
         }
 
         var exchange = new RabbitMQExchangeResource(name, exName, builder.Resource, type);
+        var vhost = builder.Resource;
 
         builder.Resource.Exchanges.Add(exchange);
 
-        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(builder.ApplicationBuilder.AddResource(exchange));
+        // Shared state — closed over by both the subscriber and the health check lambda.
+        var bindingErrors = new ConcurrentBag<string>();
+        var bindingsDone = false;
+        var bindingsKey = $"{exchange.Name}_bindings_check";
+        builder.ApplicationBuilder.Services.AddHealthChecks().AddAsyncCheck(
+            bindingsKey,
+            _ =>
+            {
+                if (!bindingsDone)
+                {
+                    return Task.FromResult(HealthCheckResult.Unhealthy(
+                        $"Bindings for exchange '{exchange.ExchangeName}' are not yet applied."));
+                }
+
+                return Task.FromResult(bindingErrors.IsEmpty
+                    ? HealthCheckResult.Healthy()
+                    : HealthCheckResult.Unhealthy(
+                        $"Binding failures for '{exchange.ExchangeName}': {string.Join("; ", bindingErrors)}"));
+            });
+
+        return builder.ApplicationBuilder.AddResource(exchange)
+            .WithProvisionableHealthCheck()
+            .WithRabbitMQProvisioning(
+                dependencies: [(vhost, WaitType.WaitUntilHealthy)],
+                provisionAsync: async (ex, client, _, ct) =>
+                {
+                    var typeString = ex.ExchangeType.ToString().ToLowerInvariant();
+                    var args = new Dictionary<string, object?>();
+
+                    ex.ExchangeArguments.FlattenInto(args, $"Exchange '{ex.ExchangeName}'");
+
+                    await client.DeclareExchangeAsync(
+                        vhost.VirtualHostName,
+                        ex.ExchangeName,
+                        typeString,
+                        ex.Durable,
+                        ex.AutoDelete,
+                        args.Count > 0 ? args : null,
+                        ct).ConfigureAwait(false);
+                })
+            .OnInitializeResource(async (ex, evt, ct) =>
+            {
+                // Wait for the exchange itself to be declared (Running).
+                await evt.Notifications.WaitForResourceAsync(ex.Name, KnownResourceStates.Running, ct)
+                    .ConfigureAwait(false);
+
+                var client = evt.Services.GetRequiredKeyedService<IRabbitMQProvisioningClient>(
+                    ex.VirtualHost.Parent.Name);
+
+                // Fan-out: each binding waits for its target independently (parallel).
+                await Task.WhenAll(ex.Bindings.Select(async binding =>
+                {
+                    await evt.Notifications.WaitForResourceAsync(
+                        binding.Destination.Name, KnownResourceStates.Running, ct).ConfigureAwait(false);
+                    try
+                    {
+                        await binding.Destination.BindAsync(
+                            client,
+                            ex.VirtualHost.VirtualHostName,
+                            ex.ExchangeName,
+                            binding.RoutingKey,
+                            binding.MatchHeaders,
+                            ct).ConfigureAwait(false);
+                    }
+                    catch (Exception bindEx)
+                    {
+                        bindingErrors.Add(
+                            $"Binding to '{binding.Destination.ProvisionedName}': {bindEx.Message}");
+                        evt.Logger.LogError(bindEx,
+                            "Failed to apply binding from '{Exchange}' to '{Destination}'.",
+                            ex.ExchangeName, binding.Destination.ProvisionedName);
+                    }
+                })).ConfigureAwait(false);
+
+                // Fan-in complete — all bag writes are done before this line.
+                bindingsDone = true;
+            })
+            .WithHealthCheck(bindingsKey);
     }
 
     /// <summary>
@@ -92,7 +176,9 @@ public static class RabbitMQExchangeExtensions
             throw new DistributedApplicationException($"Cannot bind exchange '{exchange.Resource.Name}' to destination '{destination.Resource.Name}' because they are in different virtual hosts.");
         }
 
-        exchange.Resource.Bindings.Add(new RabbitMQBinding(destination.Resource, routingKey, matchHeaders));
+        var binding = new RabbitMQBinding(destination.Resource, routingKey, matchHeaders);
+        exchange.Resource.Bindings.Add(binding);
+
         return exchange.WithRelationship(destination.Resource, "Binding");
     }
 

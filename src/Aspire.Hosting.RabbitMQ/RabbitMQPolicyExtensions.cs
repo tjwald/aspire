@@ -1,6 +1,8 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Aspire.Hosting.RabbitMQ.Provisioning;
+
 namespace Aspire.Hosting.ApplicationModel;
 
 /// <summary>
@@ -59,7 +61,38 @@ public static class RabbitMQPolicyExtensions
             return Task.CompletedTask;
         });
 
-        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(policyBuilder);
+        var vhost = builder.Resource;
+
+        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(policyBuilder)
+            .WithRabbitMQProvisioning(
+                dependencies: [(vhost, WaitType.WaitUntilHealthy)],
+                provisionAsync: async (p, client, _, ct) =>
+                {
+                    var definition = new Dictionary<string, object?>();
+
+                    if (p.ApplyTo != RabbitMQPolicyApplyTo.Exchanges)
+                    {
+                        p.QueueArguments.FlattenInto(definition, $"Policy '{p.PolicyName}'");
+                    }
+
+                    if (p.ApplyTo != RabbitMQPolicyApplyTo.Queues)
+                    {
+                        p.ExchangeArguments.FlattenInto(definition, $"Policy '{p.PolicyName}'");
+                    }
+
+                    foreach (var (k, v) in p.AdditionalArguments)
+                    {
+                        definition[k] = v;
+                    }
+
+                    var def = new RabbitMQPolicyDefinition(
+                        p.Pattern,
+                        p.ApplyTo.ToString().ToLowerInvariant(),
+                        definition,
+                        p.Priority);
+
+                    await client.PutPolicyAsync(vhost.VirtualHostName, p.PolicyName, def, ct).ConfigureAwait(false);
+                });
     }
 
     /// <summary>

@@ -11,41 +11,32 @@ namespace Aspire.Hosting.RabbitMQ.Provisioning;
 /// Shared <see cref="IHealthCheck"/> implementation for all RabbitMQ child resources (virtual hosts, queues, exchanges, shovels, policies).
 /// </summary>
 /// <remarks>
-/// The check proceeds in three stages: returns <see cref="HealthStatus.Unhealthy"/> if provisioning has not started or failed,
-/// then checks each resource's health dependencies the same way, and finally calls the live broker probe for verification.
+/// The check proceeds in stages: returns <see cref="HealthStatus.Unhealthy"/> if the resource's Aspire state
+/// is not yet <c>Running</c>, then checks each resource's health dependencies are healthy,
+/// and finally calls the live broker probe for verification.
 /// </remarks>
-internal sealed class RabbitMQProvisionableHealthCheck(RabbitMQProvisionableResource self, IRabbitMQProvisioningClient client, ILogger<RabbitMQProvisionableHealthCheck> logger) : IHealthCheck
+internal sealed class RabbitMQProvisionableHealthCheck(
+    RabbitMQProvisionableResource self,
+    IRabbitMQProvisioningClient client,
+    ResourceNotificationService notifications,
+    ILogger<RabbitMQProvisionableHealthCheck> logger) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
-        // Stage 1: own provisioning — read task state synchronously (no blocking wait)
-        if (!self.ProvisionedTask.IsCompleted)
+        // Stage 1: own lifecycle state gate.
+        if (!notifications.TryGetCurrentState(self.Name, out var evt) ||
+            evt.Snapshot.State?.Text != KnownResourceStates.Running)
         {
-            return HealthCheckResult.Unhealthy($"Provisioning of '{self.Name}' has not started yet.");
+            return HealthCheckResult.Unhealthy($"'{self.Name}' is not yet Running.");
         }
 
-        if (self.ProvisionedTask.IsFaulted)
-        {
-            var ex = self.ProvisionedTask.Exception?.InnerException ?? self.ProvisionedTask.Exception;
-            var message = $"Provisioning of '{self.Name}' failed: {ex?.Message}";
-            logger.LogWarning(ex, "{Message}", message);
-            return HealthCheckResult.Unhealthy(message, ex);
-        }
-
-        // Stage 2: health dependencies (e.g. policies that apply to this queue/exchange)
+        // Stage 2: health dependencies (e.g. policies that apply to this queue/exchange) must be healthy.
         foreach (var dep in self.HealthDependencies)
         {
-            if (!dep.ProvisionedTask.IsCompleted)
+            if (!notifications.TryGetCurrentState(dep.Name, out var depEvt) ||
+                depEvt.Snapshot.HealthStatus != HealthStatus.Healthy)
             {
-                return HealthCheckResult.Unhealthy($"Dependent resource '{dep.Name}' has not started provisioning yet.");
-            }
-
-            if (dep.ProvisionedTask.IsFaulted)
-            {
-                var ex = dep.ProvisionedTask.Exception?.InnerException ?? dep.ProvisionedTask.Exception;
-                var message = $"Dependent resource '{dep.Name}' failed to provision: {ex?.Message}";
-                logger.LogWarning(ex, "{Message}", message);
-                return HealthCheckResult.Unhealthy(message, ex);
+                return HealthCheckResult.Unhealthy($"Dependency '{dep.Name}' is not yet healthy.");
             }
         }
 

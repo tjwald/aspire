@@ -1,6 +1,9 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Globalization;
+using Aspire.Hosting.RabbitMQ.Provisioning;
+
 namespace Aspire.Hosting.ApplicationModel;
 
 /// <summary>
@@ -57,14 +60,56 @@ public static class RabbitMQShovelExtensions
         var shovel = new RabbitMQShovelResource(name, wireName, vhost.Resource, source.Resource, destination.Resource);
         vhost.Resource.Shovels.Add(shovel);
 
-        var server = vhost.ApplicationBuilder.CreateResourceBuilder(vhost.Resource.Parent);
-        server.WithManagementPlugin();
-        server.WithPlugin(RabbitMQPlugin.Shovel);
-        server.WithPlugin(RabbitMQPlugin.ShovelManagement);
+        vhost.ApplicationBuilder.CreateResourceBuilder(vhost.Resource.Parent)
+            .WithManagementPlugin()
+            .WithPlugin(RabbitMQPlugin.Shovel)
+            .WithPlugin(RabbitMQPlugin.ShovelManagement);
+
+        var vhostResource = vhost.Resource;
 
         return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(vhost.ApplicationBuilder.AddResource(shovel)
             .WithRelationship(source.Resource, "Source")
-            .WithRelationship(destination.Resource, "Destination"));
+            .WithRelationship(destination.Resource, "Destination"))
+            .WithRabbitMQProvisioning(
+                dependencies: [
+                    (vhostResource, WaitType.WaitUntilHealthy),
+                    (shovel.Source, WaitType.WaitUntilStarted),
+                    (shovel.Destination, WaitType.WaitUntilStarted)
+                ],
+                provisionAsync: async (s, client, _, ct) =>
+                {
+                    var srcUri = await s.Source.ConnectionStringExpression.GetValueAsync(ct).ConfigureAwait(false)
+                        ?? throw new DistributedApplicationException($"Could not resolve source URI for shovel '{s.ShovelName}'.");
+                    var destUri = await s.Destination.ConnectionStringExpression.GetValueAsync(ct).ConfigureAwait(false)
+                        ?? throw new DistributedApplicationException($"Could not resolve destination URI for shovel '{s.ShovelName}'.");
+
+                    var ackModeString = s.AckMode switch
+                    {
+                        RabbitMQShovelAckMode.OnConfirm => "on-confirm",
+                        RabbitMQShovelAckMode.OnPublish => "on-publish",
+                        RabbitMQShovelAckMode.NoAck => "no-ack",
+                        _ => "on-confirm"
+                    };
+
+                    var def = new RabbitMQShovelDefinitionValue
+                    {
+                        SrcUri = srcUri,
+                        SrcQueue = s.Source.Kind == RabbitMQDestinationKind.Queue ? s.Source.ProvisionedName : null,
+                        SrcExchange = s.Source.Kind == RabbitMQDestinationKind.Exchange ? s.Source.ProvisionedName : null,
+                        DestUri = destUri,
+                        DestQueue = s.Destination.Kind == RabbitMQDestinationKind.Queue ? s.Destination.ProvisionedName : null,
+                        DestExchange = s.Destination.Kind == RabbitMQDestinationKind.Exchange ? s.Destination.ProvisionedName : null,
+                        AckMode = ackModeString,
+                        ReconnectDelay = s.ReconnectDelay.HasValue ? (int)s.ReconnectDelay.Value.TotalSeconds : null,
+                        SrcDeleteAfter = s.SrcDeleteAfter?.ToString(CultureInfo.InvariantCulture)
+                    };
+
+                    await client.PutShovelAsync(
+                        vhostResource.VirtualHostName,
+                        s.ShovelName,
+                        new RabbitMQShovelDefinition { Value = def },
+                        ct).ConfigureAwait(false);
+                });
     }
 
     /// <summary>

@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Aspire.Hosting.RabbitMQ.Provisioning;
-using Microsoft.Extensions.Logging;
 
 namespace Aspire.Hosting.ApplicationModel;
 
@@ -76,31 +75,6 @@ public class RabbitMQVirtualHostResource : RabbitMQProvisionableResource, IResou
             .Concat(Queues.Cast<RabbitMQProvisionableResource>())
             .Concat(Exchanges.Cast<RabbitMQProvisionableResource>())
             .Concat(Shovels.Cast<RabbitMQProvisionableResource>());
-
-    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    internal override Task ProvisionedTask => _tcs.Task;
-
-    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
-    {
-        await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
-        try
-        {
-            if (VirtualHostName != "/")
-            {
-                await client.CreateVirtualHostAsync(VirtualHostName, cancellationToken).ConfigureAwait(false);
-            }
-
-            _tcs.TrySetResult();
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Running }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _tcs.TrySetException(ex);
-            resourceLogger.GetLogger(Name).LogError(ex, "Failed to create virtual host '{VirtualHost}'.", VirtualHostName);
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.FailedToStart }).ConfigureAwait(false);
-        }
-    }
 
     internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {

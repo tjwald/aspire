@@ -43,6 +43,15 @@ public static class RabbitMQVirtualHostExtensions
             builder.WithManagementPlugin();
         }
 
-        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(builder.ApplicationBuilder.AddResource(vhost));
+        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(builder.ApplicationBuilder.AddResource(vhost))
+            .WithRabbitMQProvisioning(
+                dependencies: [],
+                provisionAsync: async (v, client, _, ct) =>
+                {
+                    if (v.VirtualHostName != "/")
+                    {
+                        await client.CreateVirtualHostAsync(v.VirtualHostName, ct).ConfigureAwait(false);
+                    }
+                });
     }
 }

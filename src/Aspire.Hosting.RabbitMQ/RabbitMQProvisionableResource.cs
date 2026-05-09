@@ -10,18 +10,6 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 public abstract class RabbitMQProvisionableResource(string name) : Resource(name)
 {
-    /// <summary>Completes when this resource has been fully provisioned; faulted if provisioning failed.</summary>
-    internal abstract Task ProvisionedTask { get; }
-
-    /// <summary>
-    /// Applies this resource to the broker. Implementations must not throw; all failures are captured in <see cref="ProvisionedTask"/>.
-    /// </summary>
-    internal abstract Task ApplyAsync(
-        IRabbitMQProvisioningClient client,
-        ResourceNotificationService notifications,
-        ResourceLoggerService resourceLogger,
-        CancellationToken cancellationToken);
-
     /// <summary>
     /// Returns the set of other provisionable resources that must complete successfully before this resource's health check reports Healthy.
     /// </summary>

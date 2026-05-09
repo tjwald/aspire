@@ -37,10 +37,33 @@ public static class RabbitMQQueueExtensions
         }
 
         var queue = new RabbitMQQueueResource(name, qName, builder.Resource, type);
+        var vhost = builder.Resource;
 
         builder.Resource.Queues.Add(queue);
 
-        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(builder.ApplicationBuilder.AddResource(queue));
+        return RabbitMQBuilderExtensions.WithProvisionableHealthCheck(builder.ApplicationBuilder.AddResource(queue))
+            .WithRabbitMQProvisioning(
+                dependencies: [(vhost, WaitType.WaitUntilHealthy)],
+                provisionAsync: async (q, client, _, ct) =>
+                {
+                    var args = new Dictionary<string, object?>();
+
+                    if (q.QueueType != RabbitMQQueueType.Classic)
+                    {
+                        args["x-queue-type"] = q.QueueType.ToString().ToLowerInvariant();
+                    }
+
+                    q.QueueArguments.FlattenInto(args, $"Queue '{q.QueueName}'");
+
+                    await client.DeclareQueueAsync(
+                        vhost.VirtualHostName,
+                        q.QueueName,
+                        q.Durable,
+                        q.Exclusive,
+                        q.AutoDelete,
+                        args.Count > 0 ? args : null,
+                        ct).ConfigureAwait(false);
+                });
     }
 
     /// <summary>

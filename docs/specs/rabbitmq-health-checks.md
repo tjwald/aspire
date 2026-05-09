@@ -16,75 +16,106 @@ what the user declared — it must be `Unhealthy` so that `WaitFor(queue)` block
 
 ## Design decisions
 
+### Self-scheduling via `OnInitializeResource`
+
+Every RabbitMQ child resource uses the platform-standard `OnInitializeResource` event to manage
+its own lifecycle. There is no central provisioner. Each resource:
+
+1. Starts in `NotStarted` (set via `WithInitialState`).
+2. Transitions to `Waiting` while blocking on hard dependencies.
+3. Transitions to `Starting` immediately before its broker call.
+4. Transitions to `Running` on success, or `FailedToStart` on failure.
+
+The `WithRabbitMQProvisioning` internal helper encapsulates steps 1–4 so that each builder
+extension only provides the broker-specific delegate. No resource type needs to repeat the
+state-transition boilerplate.
+
 ### Two signals per resource: lifecycle and health
 
 Every RabbitMQ child resource participates in two independent signaling channels:
 
-**Lifecycle signal** (Aspire resource state — `Starting` / `Running` / `FailedToStart`):
+**Lifecycle signal** (Aspire resource state — `Waiting` / `Starting` / `Running` / `FailedToStart`):
 Reflects whether the provisioning attempt has been made and what its outcome was.
 The resource transitions to `Running` once the broker call completes successfully.
 If the broker call fails, the resource transitions to `FailedToStart`.
-Resources that have not yet been reached by the provisioner remain in `Starting`.
+Resources waiting for a dependency remain in `Waiting`.
+Resources whose dependency never became ready remain in `NotStarted`.
 
-**Health signal** (`ProvisionedTask` — a read-only `Task`):
-A gate the health check reads synchronously. Pending means provisioning has not completed yet
-(health check returns `Unhealthy`). Completed means provisioning succeeded and the live probe
-can run. Faulted means provisioning failed (health check returns `Unhealthy`).
+**Health signal** (health check result):
+The health check is the sole gate for `WaitFor` dependents. It returns `Unhealthy` until the
+resource is fully provisioned (broker call succeeded, bindings applied, live probe passes).
+There is no separate `ProvisionedTask` — the health check IS the provisioning signal.
 
 These two channels are intentionally separate: lifecycle state is visible in the Aspire dashboard
 resource list; health state is visible in the health check panel and gates `WaitFor` dependents.
-
-### Resource owns both signals
-
-Each resource owns its provisioning signal (`ProvisionedTask`) and is responsible for publishing
-its own lifecycle state transitions. The provisioner calls `ApplyAsync` (and for exchanges,
-`ApplyBindingsAsync`) and the resource handles everything else internally.
-
-The `TaskCompletionSource` is `private readonly` inside each resource. `RabbitMQProvisionableResource` exposes only
-the read side: `Task ProvisionedTask { get; }`. This prevents the provisioner from signaling
-arbitrary states independently of the actual broker call result.
-
-`ApplyAsync` receives a `ResourceNotificationService` parameter so the resource can publish
-`Starting` at entry and `Running` or `FailedToStart` at exit without any external coordination.
-
-### Per-resource provisioning signal
-
-Each resource owns a `Task ProvisionedTask` that is completed (or faulted) when its own
-provisioning step finishes. This isolates failures: if one queue fails to declare, only that
-queue's health check reports `Unhealthy`. Sibling queues, exchanges, and shovels are unaffected.
-
-When a vhost fails to create, the provisioner returns early and child resources are never reached.
-Children remain in `Starting` with `ProvisionedTask` still pending — the health check returns
-`Unhealthy` ("provisioning has not started yet"), which is semantically correct: provisioning never ran.
-There is no cascade-fault of children; `FailedToStart` is reserved for resources whose own
-provisioning attempt was made and failed.
 
 ### Lifecycle and health state matrix
 
 | Situation | Lifecycle state | Health check result |
 |---|---|---|
-| Provisioner has not reached this resource yet | `Starting` | `Unhealthy` |
+| `OnInitializeResource` not yet fired | `NotStarted` | `Unhealthy` |
+| Waiting for hard dependency | `Waiting` | `Unhealthy` |
+| Broker call in progress | `Starting` | `Unhealthy` |
 | Provisioning succeeded | `Running` | `Healthy` after live probe |
 | Provisioning failed | `FailedToStart` | `Unhealthy` |
 | Exchange declared; bindings in progress | `Running` | `Unhealthy` |
 | Exchange declared; bindings failed | `Running` | `Unhealthy` |
+| Vhost failed; children never reached | `NotStarted` | `Unhealthy` |
+
+### Dependency wait types
+
+Resources wait for their dependencies inside `OnInitializeResource` using
+`ResourceNotificationService.WaitForResourceAsync` and `WaitForResourceHealthyAsync`.
+The wait type differs by dependency kind:
+
+| Dependency | Wait type | Reason |
+|---|---|---|
+| Vhost (for queues, exchanges, policies, shovels) | `Healthy` | Proves `CanConnectAsync` — vhost is reachable, not just declared |
+| Binding target (for exchange binding subscribers) | `Running` | Entity exists on broker; avoids circular health dependency chains |
+| Shovel source / destination | `Running` | Entity exists on broker |
 
 ### Exchange is a special case: two-phase provisioning
 
-Exchanges are declared in phase 2 and have their bindings applied in phase 3. The exchange
-transitions to `Running` after successful declaration (it is live on the broker at that point).
-`ProvisionedTask` is not completed until bindings also succeed. If bindings fail, the exchange
-stays `Running` but `ProvisionedTask` faults, so the health check reports `Unhealthy`.
+Exchanges are declared in their `OnInitializeResource` handler (phase 1) and have their bindings
+applied by separate concurrent `OnInitializeResource` subscribers registered at `AddBinding` call
+time (phase 2).
 
-If declaration itself fails, the exchange transitions to `FailedToStart` and `ProvisionedTask`
-faults immediately. The provisioner skips phase 3 for that exchange by checking
-`exchange.ProvisionedTask.IsFaulted`.
+The exchange transitions to `Running` after successful declaration (it is live on the broker at
+that point). Each binding subscriber self-gates on the exchange reaching `Running` before applying
+its binding. The health check returns `Unhealthy` until all expected bindings are applied.
 
-### Two-stage health check: provisioning signal + live probe
+If declaration itself fails, the exchange transitions to `FailedToStart`. Binding subscribers
+waiting on `WaitForResourceAsync(exchange.Name, Running)` will never unblock — they are cancelled
+when the application shuts down or the cancellation token is signalled.
 
-The provisioning signal proves "we sent the declare and the broker accepted it." The live probe
-proves "the entity still exists" — catching out-of-band deletion by an operator. Both stages are
-required for correctness.
+If a binding fails, the exchange stays `Running` but the health check reports `Unhealthy` because
+`AnyBindingFailed` is true.
+
+### Exchange binding tracking (replaces `ProvisionedTask`)
+
+`RabbitMQExchangeResource` tracks binding completion with simple counters rather than a
+`TaskCompletionSource`:
+
+- `_pendingBindings`: set at build time to `Bindings.Count`
+- `_appliedBindings`: incremented by each successful binding subscriber
+- `_failedBindings`: incremented by each failed binding subscriber
+
+The health check reads:
+- `AllBindingsApplied` (`_appliedBindings + _failedBindings >= _pendingBindings`) — gate before probe
+- `AnyBindingFailed` — returns `Unhealthy` if true
+
+### Cross-exchange binding — no deadlock
+
+When Exchange A binds to B and B binds to A, both declare concurrently and reach `Running`
+independently. Each binding subscriber then waits for its target to be `Running` (already
+satisfied) and applies its binding. No circular wait exists because binding subscribers wait for
+`Running` (declaration complete), not `Healthy` (bindings complete).
+
+### Two-stage health check: provisioning state + live probe
+
+The provisioning state (binding counters, `FailedToStart` check) proves "we sent the declare and
+the broker accepted it, and all bindings were applied." The live probe proves "the entity still
+exists" — catching out-of-band deletion by an operator. Both stages are required for correctness.
 
 ### Resource owns its own health semantics
 
@@ -120,19 +151,20 @@ queue/exchange whose name matches the policy pattern as `Unhealthy`.
 Policy-to-entity matching is resolved once after the model is fully built (not at `AddPolicy` call
 time, to avoid order-dependency) and cached on each entity via `AppliedPolicies`. The same
 resolution pass adds a dashboard relationship edge so the cascade is visible without reading logs.
-This behaviour is implemented and covered by tests.
+Queues and exchanges do **not** wait for their policies before starting — they declare themselves
+independently and remain `Running-but-Unhealthy` if a policy fails.
 
 ## Extension guidance
 
 When adding a new provisionable resource type:
 
-- Inherit from `RabbitMQProvisionableResource` and keep the `TaskCompletionSource` `private readonly`; expose only `Task ProvisionedTask { get; }` via `internal override`.
-- In `ApplyAsync`, publish `Starting` at entry, then do the broker work.
-  On success: complete the TCS and publish `Running`.
-  On failure: fault the TCS and publish `FailedToStart`.
-- Implement a live probe appropriate to the entity type (existence, state, connectivity).
-- Declare health dependencies if the resource's correctness depends on other provisionables
+- Inherit from `RabbitMQProvisionableResource`.
+- In the builder extension, call `WithRabbitMQProvisioning(server, dependencies, provisionAsync)`:
+  - `dependencies`: list of `(IResource, WaitType)` pairs — vhost with `WaitUntilHealthy`,
+    other resources with `WaitUntilStarted` as appropriate.
+  - `provisionAsync`: performs the broker call only. State transitions are handled by the helper.
+- Implement `ProbeAsync` for the live existence/state check appropriate to the entity type.
+- Override `HealthDependencies` if the resource's correctness depends on other provisionables
   (e.g. policies applied to it).
 - Register the health check using the shared helper — no bespoke registration logic.
-- Add the resource to the appropriate provisioner phase; capture failures per-entity without
-  short-circuiting siblings. The provisioner must not touch the TCS directly.
+- No changes to any existing file are required. The new resource type is fully self-contained.

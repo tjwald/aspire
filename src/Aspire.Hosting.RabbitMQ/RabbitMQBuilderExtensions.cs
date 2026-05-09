@@ -61,11 +61,6 @@ public static class RabbitMQBuilderExtensions
             rabbitMq.Name,
             (sp, _) => new RabbitMQProvisioningClient(rabbitMq, sp.GetRequiredService<ILogger<RabbitMQProvisioningClient>>()));
 
-        builder.Eventing.Subscribe<ResourceReadyEvent>(rabbitMq, async (@event, ct) =>
-        {
-            await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(rabbitMq, @event.Services, ct).ConfigureAwait(false);
-        });
-
         builder.Services.AddHealthChecks().AddRabbitMQ(async (sp) =>
         {
             // NOTE: Ensure that execution of this setup callback is deferred until after
@@ -310,8 +305,9 @@ public static class RabbitMQBuilderExtensions
             sp =>
             {
                 var client = sp.GetRequiredKeyedService<IRabbitMQProvisioningClient>(serverName);
+                var notifications = sp.GetRequiredService<ResourceNotificationService>();
                 var logger = sp.GetRequiredService<ILoggerFactory>().CreateLogger<RabbitMQProvisionableHealthCheck>();
-                return new RabbitMQProvisionableHealthCheck(resource, client, logger);
+                return new RabbitMQProvisionableHealthCheck(resource, client, notifications, logger);
             },
             failureStatus: null,
             tags: null));

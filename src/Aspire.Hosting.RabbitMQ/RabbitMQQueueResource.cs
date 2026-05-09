@@ -3,7 +3,6 @@
 
 using System.Diagnostics;
 using Aspire.Hosting.RabbitMQ.Provisioning;
-using Microsoft.Extensions.Logging;
 
 namespace Aspire.Hosting.ApplicationModel;
 
@@ -96,44 +95,6 @@ public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectio
             {
                 yield return dlx;
             }
-        }
-    }
-
-    private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    internal override Task ProvisionedTask => _tcs.Task;
-
-    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
-    {
-        await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
-        try
-        {
-            var args = new Dictionary<string, object?>();
-
-            if (QueueType != RabbitMQQueueType.Classic)
-            {
-                args["x-queue-type"] = QueueType.ToString().ToLowerInvariant();
-            }
-
-            QueueArguments.FlattenInto(args, $"Queue '{QueueName}'");
-
-            await client.DeclareQueueAsync(
-                VirtualHost.VirtualHostName,
-                QueueName,
-                Durable,
-                Exclusive,
-                AutoDelete,
-                args.Count > 0 ? args : null,
-                cancellationToken).ConfigureAwait(false);
-
-            _tcs.TrySetResult();
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Running }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _tcs.TrySetException(ex);
-            resourceLogger.GetLogger(Name).LogError(ex, "Failed to declare queue '{Queue}'.", QueueName);
-            await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.FailedToStart }).ConfigureAwait(false);
         }
     }
 
