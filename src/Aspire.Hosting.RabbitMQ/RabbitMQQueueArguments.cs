@@ -9,7 +9,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Configures queue-specific x-arguments such as message TTL, length limits, and dead-lettering.
 /// </summary>
 /// <remarks>
-/// Use <see cref="RabbitMQBuilderExtensions.WithQueueArguments{T}"/> to configure these settings on a
+/// Use <see cref="RabbitMQQueueExtensions.WithQueueArguments{T}"/> to configure these settings on a
 /// <see cref="RabbitMQQueueResource"/> or a <see cref="RabbitMQPolicyResource"/> that targets queues.
 /// </remarks>
 [AspireDto]
@@ -39,7 +39,7 @@ public sealed class RabbitMQQueueArguments
     /// Gets the dead-letter exchange for this queue (<c>x-dead-letter-exchange</c>).
     /// </summary>
     /// <remarks>
-    /// Use <see cref="RabbitMQBuilderExtensions.WithDeadLetterExchange{T}"/> to set this value.
+    /// Use <see cref="RabbitMQQueueExtensions.WithDeadLetterExchange{T}"/> to set this value.
     /// </remarks>
     public RabbitMQExchangeResource? DeadLetterExchange { get; private set; }
 
@@ -47,7 +47,7 @@ public sealed class RabbitMQQueueArguments
     /// Gets the routing key used when dead-lettering messages (<c>x-dead-letter-routing-key</c>).
     /// </summary>
     /// <remarks>
-    /// Use <see cref="RabbitMQBuilderExtensions.WithDeadLetterExchange{T}"/> to set this value.
+    /// Use <see cref="RabbitMQQueueExtensions.WithDeadLetterExchange{T}"/> to set this value.
     /// </remarks>
     public string? DeadLetterRoutingKey { get; private set; }
 
@@ -60,7 +60,7 @@ public sealed class RabbitMQQueueArguments
     /// </remarks>
     public Dictionary<string, object?> AdditionalArguments { get; } = [];
 
-    /// <summary>Sets the dead-letter exchange and optional routing key; called by <see cref="RabbitMQBuilderExtensions.WithDeadLetterExchange{T}"/>.</summary>
+    /// <summary>Sets the dead-letter exchange and optional routing key; called by <see cref="RabbitMQQueueExtensions.WithDeadLetterExchange{T}"/>.</summary>
     internal void SetDeadLetterExchange(RabbitMQExchangeResource dlx, string? routingKey)
     {
         DeadLetterExchange = dlx;

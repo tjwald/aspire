@@ -53,7 +53,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
     /// Gets the exchange arguments for this exchange declaration, such as the alternate exchange for unroutable messages.
     /// </summary>
     /// <remarks>
-    /// Use <see cref="RabbitMQBuilderExtensions.WithExchangeArguments{T}"/> to configure these settings.
+    /// Use <see cref="RabbitMQExchangeExtensions.WithExchangeArguments{T}"/> to configure these settings.
     /// </remarks>
     public RabbitMQExchangeArguments ExchangeArguments { get; } = new();
 

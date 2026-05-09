@@ -9,7 +9,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Configures exchange-specific x-arguments such as the alternate exchange for unroutable messages.
 /// </summary>
 /// <remarks>
-/// Use <see cref="RabbitMQBuilderExtensions.WithExchangeArguments{T}"/> to configure these settings on a
+/// Use <see cref="RabbitMQExchangeExtensions.WithExchangeArguments{T}"/> to configure these settings on a
 /// <see cref="RabbitMQExchangeResource"/> or a <see cref="RabbitMQPolicyResource"/> that targets exchanges.
 /// </remarks>
 [AspireDto]
@@ -19,7 +19,7 @@ public sealed class RabbitMQExchangeArguments
     /// Gets the alternate exchange for this exchange (<c>alternate-exchange</c>).
     /// </summary>
     /// <remarks>
-    /// Use <see cref="RabbitMQBuilderExtensions.WithAlternateExchange{T}"/> to set this value.
+    /// Use <see cref="RabbitMQExchangeExtensions.WithAlternateExchange{T}"/> to set this value.
     /// </remarks>
     public RabbitMQExchangeResource? AlternateExchange { get; private set; }
 
@@ -32,7 +32,7 @@ public sealed class RabbitMQExchangeArguments
     /// </remarks>
     public Dictionary<string, object?> AdditionalArguments { get; } = [];
 
-    /// <summary>Sets the alternate exchange; called by <see cref="RabbitMQBuilderExtensions.WithAlternateExchange{T}"/>.</summary>
+    /// <summary>Sets the alternate exchange; called by <see cref="RabbitMQExchangeExtensions.WithAlternateExchange{T}"/>.</summary>
     internal void SetAlternateExchange(RabbitMQExchangeResource ae)
     {
         AlternateExchange = ae;

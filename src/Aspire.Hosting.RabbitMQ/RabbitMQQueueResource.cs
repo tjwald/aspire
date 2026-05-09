@@ -58,7 +58,7 @@ public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectio
     /// Gets the queue arguments for this queue declaration, such as TTL, length limits, and dead-lettering.
     /// </summary>
     /// <remarks>
-    /// Use <see cref="RabbitMQBuilderExtensions.WithQueueArguments{T}"/> to configure these settings.
+    /// Use <see cref="RabbitMQQueueExtensions.WithQueueArguments{T}"/> to configure these settings.
     /// For settings that should apply to multiple queues, use <c>AddPolicy</c> on the virtual host instead.
     /// </remarks>
     public RabbitMQQueueArguments QueueArguments { get; } = new();

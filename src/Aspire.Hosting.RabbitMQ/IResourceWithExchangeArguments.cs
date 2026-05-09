@@ -9,8 +9,8 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 /// <remarks>
 /// Implemented by <see cref="RabbitMQExchangeResource"/> and <see cref="RabbitMQPolicyResource"/>.
-/// Use <see cref="RabbitMQBuilderExtensions.WithExchangeArguments{T}"/> or
-/// <see cref="RabbitMQBuilderExtensions.WithAlternateExchange{T}"/> to configure these settings.
+/// Use <see cref="RabbitMQExchangeExtensions.WithExchangeArguments{T}"/> or
+/// <see cref="RabbitMQExchangeExtensions.WithAlternateExchange{T}"/> to configure these settings.
 /// </remarks>
 public interface IResourceWithExchangeArguments : IResource
 {
