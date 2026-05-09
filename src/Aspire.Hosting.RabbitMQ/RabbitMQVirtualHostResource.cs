@@ -12,7 +12,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, VirtualHostName = {VirtualHostName}")]
 [AspireExport(ExposeProperties = true)]
-public class RabbitMQVirtualHostResource : Resource, IResourceWithParent<RabbitMQServerResource>, IResourceWithConnectionString, IRabbitMQProvisionable, IRabbitMQServerChild
+public class RabbitMQVirtualHostResource : RabbitMQProvisionableResource, IResourceWithParent<RabbitMQServerResource>, IResourceWithConnectionString, IRabbitMQServerChild
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMQVirtualHostResource"/> class.
@@ -71,17 +71,17 @@ public class RabbitMQVirtualHostResource : Resource, IResourceWithParent<RabbitM
     /// <summary>
     /// Enumerates all child provisionable resources in this virtual host in provisioning order: policies, queues, exchanges, then shovels.
     /// </summary>
-    internal IEnumerable<IRabbitMQProvisionable> EnumerateChildren()
-        => Policies.Cast<IRabbitMQProvisionable>()
-            .Concat(Queues)
-            .Concat(Exchanges)
-            .Concat(Shovels);
+    internal IEnumerable<RabbitMQProvisionableResource> EnumerateChildren()
+        => Policies.Cast<RabbitMQProvisionableResource>()
+            .Concat(Queues.Cast<RabbitMQProvisionableResource>())
+            .Concat(Exchanges.Cast<RabbitMQProvisionableResource>())
+            .Concat(Shovels.Cast<RabbitMQProvisionableResource>());
 
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    Task IRabbitMQProvisionable.ProvisionedTask => _tcs.Task;
+    internal override Task ProvisionedTask => _tcs.Task;
 
-    async Task IRabbitMQProvisionable.ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
+    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
     {
         await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
         try
@@ -102,7 +102,7 @@ public class RabbitMQVirtualHostResource : Resource, IResourceWithParent<RabbitM
         }
     }
 
-    async ValueTask<RabbitMQProbeResult> IRabbitMQProvisionable.ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
+    internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {
         var connected = await client.CanConnectAsync(VirtualHostName, cancellationToken).ConfigureAwait(false);
         return connected

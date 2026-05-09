@@ -239,8 +239,8 @@ public class RabbitMQPolicyTests
         using var app = builder.Build();
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
-        Assert.True(((IRabbitMQProvisionable)policyBuilder.Resource).ProvisionedTask.IsFaulted, "Policy TCS should be faulted");
-        Assert.True(((IRabbitMQProvisionable)queue.Resource).ProvisionedTask.IsCompletedSuccessfully, "Queue TCS should succeed independently");
+        Assert.True(policyBuilder.Resource.ProvisionedTask.IsFaulted, "Policy TCS should be faulted");
+        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully, "Queue TCS should succeed independently");
     }
 
     [Fact]
@@ -259,9 +259,9 @@ public class RabbitMQPolicyTests
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
         // Vhost itself is faulted
-        Assert.True(((IRabbitMQProvisionable)vhost.Resource).ProvisionedTask.IsFaulted);
+        Assert.True(vhost.Resource.ProvisionedTask.IsFaulted);
         // Children stay pending (Starting) — no cascade fault in the new design
-        Assert.False(((IRabbitMQProvisionable)policyBuilder.Resource).ProvisionedTask.IsCompleted, "Policy TCS should stay pending when vhost fails");
+        Assert.False(policyBuilder.Resource.ProvisionedTask.IsCompleted, "Policy TCS should stay pending when vhost fails");
     }
 
     // ── Health dependency ─────────────────────────────────────────────────────
@@ -287,8 +287,8 @@ public class RabbitMQPolicyTests
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
         // Queue itself provisioned OK, but its policy failed
-        Assert.True(((IRabbitMQProvisionable)queue.Resource).ProvisionedTask.IsCompletedSuccessfully);
-        Assert.True(((IRabbitMQProvisionable)policyBuilder.Resource).ProvisionedTask.IsFaulted);
+        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(policyBuilder.Resource.ProvisionedTask.IsFaulted);
 
         // The queue's HealthDependencies should include the policy
         Assert.Single(queue.Resource.AppliedPolicies);

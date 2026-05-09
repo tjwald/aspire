@@ -40,7 +40,7 @@ Each resource owns its provisioning signal (`ProvisionedTask`) and is responsibl
 its own lifecycle state transitions. The provisioner calls `ApplyAsync` (and for exchanges,
 `ApplyBindingsAsync`) and the resource handles everything else internally.
 
-The `TaskCompletionSource` is `private readonly` inside each resource. The interface exposes only
+The `TaskCompletionSource` is `private readonly` inside each resource. `RabbitMQProvisionableResource` exposes only
 the read side: `Task ProvisionedTask { get; }`. This prevents the provisioner from signaling
 arbitrary states independently of the actual broker call result.
 
@@ -126,7 +126,7 @@ This behaviour is implemented and covered by tests.
 
 When adding a new provisionable resource type:
 
-- Keep the `TaskCompletionSource` `private readonly`; expose only `Task ProvisionedTask { get; }`.
+- Inherit from `RabbitMQProvisionableResource` and keep the `TaskCompletionSource` `private readonly`; expose only `Task ProvisionedTask { get; }` via `internal override`.
 - In `ApplyAsync`, publish `Starting` at entry, then do the broker work.
   On success: complete the TCS and publish `Running`.
   On failure: fault the TCS and publish `FailedToStart`.

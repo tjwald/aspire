@@ -12,7 +12,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, ExchangeName = {ExchangeName}")]
 [AspireExport(ExposeProperties = true)]
-public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnectionString, IRabbitMQProvisionable, IResourceWithExchangeArguments
+public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnectionString, IResourceWithExchangeArguments
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMQExchangeResource"/> class.
@@ -64,7 +64,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
     /// </summary>
     internal List<RabbitMQPolicyResource> AppliedPolicies { get; } = [];
 
-    IEnumerable<IRabbitMQProvisionable> IRabbitMQProvisionable.HealthDependencies
+    internal override IEnumerable<RabbitMQProvisionableResource> HealthDependencies
     {
         get
         {
@@ -97,7 +97,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
 
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    Task IRabbitMQProvisionable.ProvisionedTask => _tcs.Task;
+    internal override Task ProvisionedTask => _tcs.Task;
 
     /// <summary>
     /// Declares the exchange on the broker and publishes <c>Running</c>.
@@ -106,7 +106,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
     /// The provisioned task is not signalled here — that happens after bindings are applied in <see cref="ApplyBindingsAsync"/>.
     /// On failure, faults the provisioned task and publishes <c>FailedToStart</c>.
     /// </remarks>
-    async Task IRabbitMQProvisionable.ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
+    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
     {
         await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
         try
@@ -141,7 +141,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
     /// Applies all bindings for this exchange and signals the provisioned task.
     /// </summary>
     /// <remarks>
-    /// On success, <see cref="IRabbitMQProvisionable.ProvisionedTask"/> completes and the lifecycle stays <c>Running</c>.
+    /// On success, <see cref="ProvisionedTask"/> completes and the lifecycle stays <c>Running</c>.
     /// On failure, the provisioned task is faulted but the lifecycle stays <c>Running</c> because the exchange itself was declared successfully.
     /// </remarks>
     internal async Task ApplyBindingsAsync(IRabbitMQProvisioningClient client, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
@@ -168,7 +168,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
         }
     }
 
-    async ValueTask<RabbitMQProbeResult> IRabbitMQProvisionable.ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
+    internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {
         var exists = await client.ExchangeExistsAsync(VirtualHost.VirtualHostName, ExchangeName, cancellationToken).ConfigureAwait(false);
         return exists

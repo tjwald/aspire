@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 
@@ -11,10 +12,9 @@ namespace Aspire.Hosting.RabbitMQ.Provisioning;
 /// </summary>
 /// <remarks>
 /// The check proceeds in three stages: returns <see cref="HealthStatus.Unhealthy"/> if provisioning has not started or failed,
-/// then checks each <see cref="IRabbitMQProvisionable.HealthDependencies"/> task the same way, and finally calls
-/// <see cref="IRabbitMQProvisionable.ProbeAsync"/> for a live broker verification.
+/// then checks each resource's health dependencies the same way, and finally calls the live broker probe for verification.
 /// </remarks>
-internal sealed class RabbitMQProvisionableHealthCheck(IRabbitMQProvisionable self, IRabbitMQProvisioningClient client, ILogger<RabbitMQProvisionableHealthCheck> logger) : IHealthCheck
+internal sealed class RabbitMQProvisionableHealthCheck(RabbitMQProvisionableResource self, IRabbitMQProvisioningClient client, ILogger<RabbitMQProvisionableHealthCheck> logger) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {

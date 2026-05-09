@@ -12,7 +12,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// The two concrete subtypes are <see cref="RabbitMQQueueResource"/> and <see cref="RabbitMQExchangeResource"/>.
 /// The connection string expression is forwarded from the parent virtual host.
 /// </remarks>
-public abstract class RabbitMQDestination : Resource,
+public abstract class RabbitMQDestination : RabbitMQProvisionableResource,
     IResourceWithConnectionString,
     IResourceWithParent<RabbitMQVirtualHostResource>,
     IRabbitMQServerChild

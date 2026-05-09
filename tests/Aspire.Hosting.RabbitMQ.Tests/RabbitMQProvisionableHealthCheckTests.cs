@@ -58,7 +58,7 @@ public class RabbitMQProvisionableHealthCheckTests
         // Drive the resource through ApplyAsync with a failing client to fault the TCS.
         var failingClient = new FakeRabbitMQProvisioningClient();
         failingClient.FailVirtualHostNames.Add("myvhost");
-        await ((IRabbitMQProvisionable)vhost).ApplyAsync(failingClient, MakeNotifications(), MakeResourceLogger(), default);
+        await vhost.ApplyAsync(failingClient, MakeNotifications(), MakeResourceLogger(), default);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -79,7 +79,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var check = new RabbitMQProvisionableHealthCheckWithDeps(queue, [dep], client);
 
         // Drive queue through ApplyAsync to complete its TCS.
-        await ((IRabbitMQProvisionable)queue).ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
+        await queue.ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -95,7 +95,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var client = new FakeRabbitMQProvisioningClient();
         var check = new RabbitMQProvisionableHealthCheck(vhost, client, NullLogger<RabbitMQProvisionableHealthCheck>.Instance);
 
-        await ((IRabbitMQProvisionable)vhost).ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
+        await vhost.ApplyAsync(client, MakeNotifications(), MakeResourceLogger(), default);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -112,7 +112,7 @@ public class RabbitMQProvisionableHealthCheckTests
 
         // Use a separate client that succeeds for ApplyAsync.
         var applyClient = new FakeRabbitMQProvisioningClient();
-        await ((IRabbitMQProvisionable)vhost).ApplyAsync(applyClient, MakeNotifications(), MakeResourceLogger(), default);
+        await vhost.ApplyAsync(applyClient, MakeNotifications(), MakeResourceLogger(), default);
 
         var result = await check.CheckHealthAsync(MakeContext());
 
@@ -129,7 +129,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var queue = new RabbitMQQueueResource("q", "myqueue", vhost);
         var client = new FakeRabbitMQProvisioningClient();
 
-        var result = await ((IRabbitMQProvisionable)queue).ProbeAsync(client, default);
+        var result = await queue.ProbeAsync(client, default);
 
         Assert.True(result.IsHealthy);
     }
@@ -142,7 +142,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var client = new FakeRabbitMQProvisioningClient();
         client.FailQueueNames.Add("myqueue");
 
-        var result = await ((IRabbitMQProvisionable)queue).ProbeAsync(client, default);
+        var result = await queue.ProbeAsync(client, default);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("myqueue", result.Description);
@@ -155,7 +155,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var exchange = new RabbitMQExchangeResource("e", "myexchange", vhost);
         var client = new FakeRabbitMQProvisioningClient();
 
-        var result = await ((IRabbitMQProvisionable)exchange).ProbeAsync(client, default);
+        var result = await exchange.ProbeAsync(client, default);
 
         Assert.True(result.IsHealthy);
     }
@@ -168,7 +168,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var client = new FakeRabbitMQProvisioningClient();
         client.FailExchangeNames.Add("myexchange");
 
-        var result = await ((IRabbitMQProvisionable)exchange).ProbeAsync(client, default);
+        var result = await exchange.ProbeAsync(client, default);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("myexchange", result.Description);
@@ -180,7 +180,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var (_, vhost) = BuildVhost();
         var client = new FakeRabbitMQProvisioningClient { CanConnect = true };
 
-        var result = await ((IRabbitMQProvisionable)vhost).ProbeAsync(client, default);
+        var result = await vhost.ProbeAsync(client, default);
 
         Assert.True(result.IsHealthy);
     }
@@ -191,7 +191,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var (_, vhost) = BuildVhost();
         var client = new FakeRabbitMQProvisioningClient { CanConnect = false };
 
-        var result = await ((IRabbitMQProvisionable)vhost).ProbeAsync(client, default);
+        var result = await vhost.ProbeAsync(client, default);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("myvhost", result.Description);
@@ -206,7 +206,7 @@ public class RabbitMQProvisionableHealthCheckTests
         var shovel = new RabbitMQShovelResource("s", "myshovel", vhost, queue, exchange);
         var client = new FakeRabbitMQProvisioningClient();
 
-        var result = await ((IRabbitMQProvisionable)shovel).ProbeAsync(client, default);
+        var result = await shovel.ProbeAsync(client, default);
 
         Assert.True(result.IsHealthy);
     }
@@ -221,7 +221,7 @@ public class RabbitMQProvisionableHealthCheckTests
 
         var client = new FixedShovelStateClient("starting");
 
-        var result = await ((IRabbitMQProvisionable)shovel).ProbeAsync(client, default);
+        var result = await shovel.ProbeAsync(client, default);
 
         Assert.False(result.IsHealthy);
         Assert.Contains("starting", result.Description);
@@ -230,14 +230,13 @@ public class RabbitMQProvisionableHealthCheckTests
     // ── Private test helpers ──────────────────────────────────────────────────
 
     /// <summary>
-    /// A minimal <see cref="IRabbitMQProvisionable"/> stub used to inject a pre-completed or faulted
-    /// <see cref="IRabbitMQProvisionable.ProvisionedTask"/> into tests without needing a real resource.
+    /// A minimal <see cref="RabbitMQProvisionableResource"/> stub used to inject a pre-completed or faulted
+    /// <see cref="RabbitMQProvisionableResource.ProvisionedTask"/> into tests without needing a real resource.
     /// </summary>
-    private sealed class StubProvisionable(string name, Task provisionedTask) : IRabbitMQProvisionable
+    private sealed class StubProvisionable(string name, Task provisionedTask) : RabbitMQProvisionableResource(name)
     {
-        public string Name => name;
-        public Task ProvisionedTask => provisionedTask;
-        public Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken ct) => Task.CompletedTask;
+        internal override Task ProvisionedTask => provisionedTask;
+        internal override Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken ct) => Task.CompletedTask;
     }
 
     /// <summary>
@@ -245,8 +244,8 @@ public class RabbitMQProvisionableHealthCheckTests
     /// allowing tests to verify the dependency-awaiting stage without needing real policy resources.
     /// </summary>
     private sealed class RabbitMQProvisionableHealthCheckWithDeps(
-        IRabbitMQProvisionable self,
-        IEnumerable<IRabbitMQProvisionable> deps,
+        RabbitMQProvisionableResource self,
+        IEnumerable<RabbitMQProvisionableResource> deps,
         IRabbitMQProvisioningClient client) : IHealthCheck
     {
         public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)

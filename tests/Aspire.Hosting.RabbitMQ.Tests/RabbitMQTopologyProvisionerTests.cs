@@ -29,10 +29,10 @@ public class RabbitMQTopologyProvisionerTests
 
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
-        Assert.True(((IRabbitMQProvisionable)vhost.Resource).ProvisionedTask.IsCompletedSuccessfully);
-        Assert.True(((IRabbitMQProvisionable)queue.Resource).ProvisionedTask.IsCompletedSuccessfully);
-        Assert.True(((IRabbitMQProvisionable)exchange.Resource).ProvisionedTask.IsCompletedSuccessfully);
-        Assert.True(((IRabbitMQProvisionable)shovel.Resource).ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(vhost.Resource.ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(exchange.Resource.ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(shovel.Resource.ProvisionedTask.IsCompletedSuccessfully);
 
         // CreateVirtualHostAsync must be first
         Assert.Equal("CreateVirtualHostAsync(myvhost)", fakeClient.Calls[0]);
@@ -71,11 +71,11 @@ public class RabbitMQTopologyProvisionerTests
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
         // Vhost itself is faulted
-        Assert.True(((IRabbitMQProvisionable)vhost.Resource).ProvisionedTask.IsFaulted);
+        Assert.True(vhost.Resource.ProvisionedTask.IsFaulted);
 
         // Children stay pending (Starting) — no cascade fault
-        Assert.False(((IRabbitMQProvisionable)queue.Resource).ProvisionedTask.IsCompleted);
-        Assert.False(((IRabbitMQProvisionable)exchange.Resource).ProvisionedTask.IsCompleted);
+        Assert.False(queue.Resource.ProvisionedTask.IsCompleted);
+        Assert.False(exchange.Resource.ProvisionedTask.IsCompleted);
     }
 
     [Fact]
@@ -97,11 +97,11 @@ public class RabbitMQTopologyProvisionerTests
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
         // Queue A succeeded
-        Assert.True(((IRabbitMQProvisionable)queueA.Resource).ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(queueA.Resource.ProvisionedTask.IsCompletedSuccessfully);
         // Queue B failed
-        Assert.True(((IRabbitMQProvisionable)queueB.Resource).ProvisionedTask.IsFaulted);
+        Assert.True(queueB.Resource.ProvisionedTask.IsFaulted);
         // Vhost itself succeeded
-        Assert.True(((IRabbitMQProvisionable)vhost.Resource).ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(vhost.Resource.ProvisionedTask.IsCompletedSuccessfully);
     }
 
     [Fact]
@@ -124,10 +124,10 @@ public class RabbitMQTopologyProvisionerTests
         await RabbitMQTopologyProvisioner.ProvisionTopologyAsync(server.Resource, app.Services, default);
 
         // Exchange is faulted (binding failed)
-        Assert.True(((IRabbitMQProvisionable)exchange.Resource).ProvisionedTask.IsFaulted);
+        Assert.True(exchange.Resource.ProvisionedTask.IsFaulted);
         // Destination queue is unaffected — it declared successfully
-        Assert.True(((IRabbitMQProvisionable)queue.Resource).ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(queue.Resource.ProvisionedTask.IsCompletedSuccessfully);
         // Vhost itself succeeded
-        Assert.True(((IRabbitMQProvisionable)vhost.Resource).ProvisionedTask.IsCompletedSuccessfully);
+        Assert.True(vhost.Resource.ProvisionedTask.IsCompletedSuccessfully);
     }
 }

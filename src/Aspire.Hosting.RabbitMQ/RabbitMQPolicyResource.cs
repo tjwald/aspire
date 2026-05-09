@@ -20,7 +20,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </remarks>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, PolicyName = {PolicyName}")]
 [AspireExport(ExposeProperties = true)]
-public class RabbitMQPolicyResource : Resource, IResourceWithParent<RabbitMQVirtualHostResource>, IRabbitMQProvisionable, IResourceWithQueueArguments, IResourceWithExchangeArguments, IRabbitMQServerChild
+public class RabbitMQPolicyResource : RabbitMQProvisionableResource, IResourceWithParent<RabbitMQVirtualHostResource>, IResourceWithQueueArguments, IResourceWithExchangeArguments, IRabbitMQServerChild
 {
     private Regex? _compiledPattern;
 
@@ -123,9 +123,9 @@ public class RabbitMQPolicyResource : Resource, IResourceWithParent<RabbitMQVirt
 
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    Task IRabbitMQProvisionable.ProvisionedTask => _tcs.Task;
+    internal override Task ProvisionedTask => _tcs.Task;
 
-    async Task IRabbitMQProvisionable.ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
+    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
     {
         await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
         try
@@ -179,7 +179,7 @@ public class RabbitMQPolicyResource : Resource, IResourceWithParent<RabbitMQVirt
         }
     }
 
-    async ValueTask<RabbitMQProbeResult> IRabbitMQProvisionable.ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
+    internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {
         var exists = await client.PolicyExistsAsync(Parent.VirtualHostName, PolicyName, cancellationToken).ConfigureAwait(false);
         return exists

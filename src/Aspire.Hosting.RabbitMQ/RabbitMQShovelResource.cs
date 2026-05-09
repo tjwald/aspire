@@ -13,7 +13,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, ShovelName = {ShovelName}")]
 [AspireExport(ExposeProperties = true)]
-public class RabbitMQShovelResource : Resource, IResourceWithParent<RabbitMQVirtualHostResource>, IRabbitMQProvisionable, IRabbitMQServerChild
+public class RabbitMQShovelResource : RabbitMQProvisionableResource, IResourceWithParent<RabbitMQVirtualHostResource>, IRabbitMQServerChild
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMQShovelResource"/> class.
@@ -74,9 +74,9 @@ public class RabbitMQShovelResource : Resource, IResourceWithParent<RabbitMQVirt
 
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    Task IRabbitMQProvisionable.ProvisionedTask => _tcs.Task;
+    internal override Task ProvisionedTask => _tcs.Task;
 
-    async ValueTask<RabbitMQProbeResult> IRabbitMQProvisionable.ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
+    internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {
         var state = await client.GetShovelStateAsync(Parent.VirtualHostName, ShovelName, cancellationToken).ConfigureAwait(false);
         return state == "running"
@@ -84,7 +84,7 @@ public class RabbitMQShovelResource : Resource, IResourceWithParent<RabbitMQVirt
             : RabbitMQProbeResult.Unhealthy($"Shovel '{ShovelName}' is in state '{state ?? "unknown"}'.");
     }
 
-    async Task IRabbitMQProvisionable.ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
+    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
     {
         await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
         try

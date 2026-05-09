@@ -12,7 +12,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// </summary>
 [DebuggerDisplay("Type = {GetType().Name,nq}, Name = {Name}, QueueName = {QueueName}")]
 [AspireExport(ExposeProperties = true)]
-public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectionString, IRabbitMQProvisionable, IResourceWithQueueArguments
+public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectionString, IResourceWithQueueArguments
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMQQueueResource"/> class.
@@ -82,7 +82,7 @@ public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectio
     /// </summary>
     internal List<RabbitMQPolicyResource> AppliedPolicies { get; } = [];
 
-    IEnumerable<IRabbitMQProvisionable> IRabbitMQProvisionable.HealthDependencies
+    internal override IEnumerable<RabbitMQProvisionableResource> HealthDependencies
     {
         get
         {
@@ -101,9 +101,9 @@ public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectio
 
     private readonly TaskCompletionSource _tcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    Task IRabbitMQProvisionable.ProvisionedTask => _tcs.Task;
+    internal override Task ProvisionedTask => _tcs.Task;
 
-    async Task IRabbitMQProvisionable.ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
+    internal override async Task ApplyAsync(IRabbitMQProvisioningClient client, ResourceNotificationService notifications, ResourceLoggerService resourceLogger, CancellationToken cancellationToken)
     {
         await notifications.PublishUpdateAsync(this, s => s with { State = KnownResourceStates.Starting }).ConfigureAwait(false);
         try
@@ -137,7 +137,7 @@ public class RabbitMQQueueResource : RabbitMQDestination, IResourceWithConnectio
         }
     }
 
-    async ValueTask<RabbitMQProbeResult> IRabbitMQProvisionable.ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
+    internal override async ValueTask<RabbitMQProbeResult> ProbeAsync(IRabbitMQProvisioningClient client, CancellationToken cancellationToken)
     {
         var exists = await client.QueueExistsAsync(VirtualHost.VirtualHostName, QueueName, cancellationToken).ConfigureAwait(false);
         return exists

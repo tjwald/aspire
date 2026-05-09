@@ -858,7 +858,7 @@ public static class RabbitMQBuilderExtensions
     /// </summary>
     private static IResourceBuilder<T> WithProvisionableHealthCheck<T>(
         this IResourceBuilder<T> builder)
-        where T : Resource, IRabbitMQProvisionable, IRabbitMQServerChild
+        where T : RabbitMQProvisionableResource, IRabbitMQServerChild
     {
         var resource = builder.Resource;
         var serverName = resource.VirtualHost.Parent.Name;
