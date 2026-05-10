@@ -24,17 +24,14 @@ internal sealed class RabbitMQProvisionableHealthCheck(
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         // Stage 1: own lifecycle state gate.
-        if (!notifications.TryGetCurrentState(self.Name, out var evt) ||
-            evt.Snapshot.State?.Text != KnownResourceStates.Running)
+        if (!notifications.TryGetCurrentState(self.Name, out var evt) || evt.Snapshot.State?.Text != KnownResourceStates.Running)
         {
             return HealthCheckResult.Unhealthy($"'{self.Name}' is not yet Running.");
         }
 
-        // Stage 2: health dependencies (e.g. policies that apply to this queue/exchange) must be healthy.
         foreach (var dep in self.HealthDependencies)
         {
-            if (!notifications.TryGetCurrentState(dep.Name, out var depEvt) ||
-                depEvt.Snapshot.HealthStatus != HealthStatus.Healthy)
+            if (!notifications.TryGetCurrentState(dep.Name, out var depEvt) || depEvt.Snapshot.HealthStatus != HealthStatus.Healthy)
             {
                 return HealthCheckResult.Unhealthy($"Dependency '{dep.Name}' is not yet healthy.");
             }

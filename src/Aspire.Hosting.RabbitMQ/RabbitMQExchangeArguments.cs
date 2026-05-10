@@ -71,5 +71,4 @@ public sealed class RabbitMQExchangeArguments
             target[XArgAlternateExchange] = ae.ExchangeName;
         }
     }
-
 }

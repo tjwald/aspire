@@ -7,11 +7,6 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Indicates that a RabbitMQ resource exposes queue-specific arguments such as message TTL,
 /// length limits, and dead-letter routing.
 /// </summary>
-/// <remarks>
-/// Implemented by <see cref="RabbitMQQueueResource"/> and <see cref="RabbitMQPolicyResource"/>.
-/// Use <see cref="RabbitMQQueueExtensions.WithQueueArguments{T}"/> or
-/// <see cref="RabbitMQQueueExtensions.WithDeadLetterExchange{T}"/> to configure these settings.
-/// </remarks>
 public interface IResourceWithQueueArguments : IResource
 {
     /// <summary>

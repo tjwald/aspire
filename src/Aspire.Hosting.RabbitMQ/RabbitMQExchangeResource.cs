@@ -28,24 +28,16 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
         ExchangeType = exchangeType;
     }
 
-    /// <summary>
-    /// Gets the name of the exchange.
-    /// </summary>
+    /// <summary>Gets the name of the exchange.</summary>
     public string ExchangeName { get; }
 
-    /// <summary>
-    /// Gets the routing algorithm used by this exchange. Set via the <c>type</c> parameter of <c>AddExchange</c>.
-    /// </summary>
+    /// <summary>Gets the routing algorithm used by this exchange. Set via the <c>type</c> parameter of <c>AddExchange</c>.</summary>
     public RabbitMQExchangeType ExchangeType { get; }
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the exchange is durable.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether the exchange is durable.</summary>
     public bool Durable { get; set; } = true;
 
-    /// <summary>
-    /// Gets or sets a value indicating whether the exchange is auto-deleted.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether the exchange is auto-deleted.</summary>
     public bool AutoDelete { get; set; }
 
     /// <summary>
@@ -58,9 +50,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
 
     internal List<RabbitMQBinding> Bindings { get; } = [];
 
-    /// <summary>
-    /// Gets the policies that apply to this exchange, resolved at startup from matching <c>AddPolicy</c> calls on the parent virtual host.
-    /// </summary>
+    /// <summary>Gets the policies that apply to this exchange, resolved at startup from matching <c>AddPolicy</c> calls on the parent virtual host.</summary>
     internal List<RabbitMQPolicyResource> AppliedPolicies { get; } = [];
 
     internal override IEnumerable<RabbitMQProvisionableResource> HealthDependencies
@@ -86,9 +76,7 @@ public class RabbitMQExchangeResource : RabbitMQDestination, IResourceWithConnec
     /// <inheritdoc/>
     public override RabbitMQDestinationKind Kind => RabbitMQDestinationKind.Exchange;
 
-    /// <summary>
-    /// Gets the connection string properties for this exchange, including the exchange name.
-    /// </summary>
+    /// <summary>Gets the connection string properties for this exchange, including the exchange name.</summary>
     IEnumerable<KeyValuePair<string, ReferenceExpression>> IResourceWithConnectionString.GetConnectionProperties() =>
         VirtualHost.CombineProperties([
             new("ExchangeName", ReferenceExpression.Create($"{ExchangeName}")),

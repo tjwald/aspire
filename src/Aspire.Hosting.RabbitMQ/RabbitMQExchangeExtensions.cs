@@ -216,10 +216,10 @@ public static class RabbitMQExchangeExtensions
     /// </summary>
     /// <typeparam name="T">The resource type. Accepts <see cref="RabbitMQExchangeResource"/> and <see cref="RabbitMQPolicyResource"/>.</typeparam>
     /// <param name="builder">The resource builder.</param>
-    /// <param name="ae">The exchange that will receive unroutable messages.</param>
+    /// <param name="alternateExchange">The exchange that will receive unroutable messages.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     /// <exception cref="DistributedApplicationException">
-    /// Thrown when <paramref name="ae"/> is in a different virtual host than the exchange.
+    /// Thrown when <paramref name="alternateExchange"/> is in a different virtual host than the exchange.
     /// </exception>
     /// <example>
     /// Capture unroutable messages in a dedicated exchange:
@@ -233,20 +233,20 @@ public static class RabbitMQExchangeExtensions
     [AspireExportIgnore(Reason = "Generic constraint uses IResourceWithParent<RabbitMQVirtualHostResource> which is not ATS-compatible. Use WithExchangeArguments to set AlternateExchange directly in polyglot app hosts.")]
     public static IResourceBuilder<T> WithAlternateExchange<T>(
         this IResourceBuilder<T> builder,
-        IResourceBuilder<RabbitMQExchangeResource> ae)
+        IResourceBuilder<RabbitMQExchangeResource> alternateExchange)
         where T : Resource, IResourceWithExchangeArguments, IResourceWithParent<RabbitMQVirtualHostResource>
     {
         ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(ae);
+        ArgumentNullException.ThrowIfNull(alternateExchange);
 
-        if (ae.Resource.VirtualHost != ((IResourceWithParent<RabbitMQVirtualHostResource>)builder.Resource).Parent)
+        if (alternateExchange.Resource.VirtualHost != builder.Resource.Parent)
         {
             throw new DistributedApplicationException(
-                $"Alternate exchange '{ae.Resource.Name}' must be in the same virtual host as '{builder.Resource.Name}'.");
+                $"Alternate exchange '{alternateExchange.Resource.Name}' must be in the same virtual host as '{builder.Resource.Name}'.");
         }
 
-        builder.Resource.ExchangeArguments.SetAlternateExchange(ae.Resource);
-        return builder.WithRelationship(ae.Resource, "AlternateExchange");
+        builder.Resource.ExchangeArguments.SetAlternateExchange(alternateExchange.Resource);
+        return builder.WithRelationship(alternateExchange.Resource, "AlternateExchange");
     }
 
     /// <summary>

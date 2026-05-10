@@ -148,9 +148,9 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
     /// </summary>
     private async Task<bool> SafeAmqpAsync(string vhost, Func<IChannel, Task> action, CancellationToken ct)
     {
+        var ch = await _amqp.GetOrCreateChannelAsync(vhost, ct).ConfigureAwait(false);
         try
         {
-            var ch = await _amqp.GetOrCreateChannelAsync(vhost, ct).ConfigureAwait(false);
             await action(ch).ConfigureAwait(false);
             return true;
         }
@@ -187,13 +187,13 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
 
     private sealed class RabbitMQAmqpConnectionManager(RabbitMQServerResource server) : IAsyncDisposable
     {
-        private readonly ConcurrentDictionary<string, (IConnection, IChannel)> _channels = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, (IConnection connection, IChannel channel)> _channels = new(StringComparer.Ordinal);
         private readonly SemaphoreSlim _gate = new(1, 1);
         private HttpClient? _http;
 
         private async ValueTask<(IConnection Connection, IChannel Channel)> GetOrCreateEntryAsync(string vhost, CancellationToken ct)
         {
-            if (_channels.TryGetValue(vhost, out var existing) && existing.Item2.IsOpen)
+            if (_channels.TryGetValue(vhost, out var existing) && existing.channel.IsOpen)
             {
                 return existing;
             }
@@ -201,7 +201,7 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
             await _gate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
-                if (_channels.TryGetValue(vhost, out var racy) && racy.Item2.IsOpen)
+                if (_channels.TryGetValue(vhost, out var racy) && racy.channel.IsOpen)
                 {
                     return racy;
                 }
@@ -209,8 +209,8 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
                 // Dispose the stale connection/channel before replacing it to avoid leaking resources.
                 if (_channels.TryRemove(vhost, out var stale))
                 {
-                    try { await stale.Item2.DisposeAsync().ConfigureAwait(false); } catch { }
-                    try { await stale.Item1.DisposeAsync().ConfigureAwait(false); } catch { }
+                    try { await stale.channel.DisposeAsync().ConfigureAwait(false); } catch { }
+                    try { await stale.connection.DisposeAsync().ConfigureAwait(false); } catch { }
                 }
 
                 var cs = await server.ConnectionStringExpression.GetValueAsync(ct).ConfigureAwait(false);

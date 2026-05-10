@@ -7,11 +7,6 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Indicates that a RabbitMQ resource exposes exchange-specific arguments such as the alternate exchange
 /// for unroutable messages.
 /// </summary>
-/// <remarks>
-/// Implemented by <see cref="RabbitMQExchangeResource"/> and <see cref="RabbitMQPolicyResource"/>.
-/// Use <see cref="RabbitMQExchangeExtensions.WithExchangeArguments{T}"/> or
-/// <see cref="RabbitMQExchangeExtensions.WithAlternateExchange{T}"/> to configure these settings.
-/// </remarks>
 public interface IResourceWithExchangeArguments : IResource
 {
     /// <summary>
