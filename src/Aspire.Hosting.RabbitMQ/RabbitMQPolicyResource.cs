@@ -21,7 +21,7 @@ namespace Aspire.Hosting.ApplicationModel;
 [AspireExport(ExposeProperties = true)]
 public class RabbitMQPolicyResource : RabbitMQProvisionableResource, IResourceWithParent<RabbitMQVirtualHostResource>, IResourceWithQueueArguments, IResourceWithExchangeArguments, IRabbitMQServerChild
 {
-    private Regex? _compiledPattern;
+    private readonly Regex _compiledPattern;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="RabbitMQPolicyResource"/> class.
@@ -44,6 +44,16 @@ public class RabbitMQPolicyResource : RabbitMQProvisionableResource, IResourceWi
         Parent = parent;
         ApplyTo = applyTo;
         Priority = priority;
+
+        try
+        {
+            _compiledPattern = new Regex(pattern, RegexOptions.Compiled, TimeSpan.FromSeconds(1));
+        }
+        catch (RegexParseException ex)
+        {
+            throw new ArgumentException(
+                $"Invalid regex pattern '{pattern}': {ex.Message}", nameof(pattern), ex);
+        }
     }
 
     /// <summary>
@@ -116,7 +126,6 @@ public class RabbitMQPolicyResource : RabbitMQProvisionableResource, IResourceWi
             return false;
         }
 
-        _compiledPattern ??= new Regex(Pattern, RegexOptions.None, TimeSpan.FromSeconds(1));
         return _compiledPattern.IsMatch(entityName);
     }
 

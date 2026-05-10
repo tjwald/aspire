@@ -53,6 +53,11 @@ public static class RabbitMQPolicyExtensions
 
         var policyBuilder = builder.ApplicationBuilder.AddResource(policy);
 
+        // Policies use the management HTTP API — ensure the management plugin is enabled (idempotent).
+        builder.ApplicationBuilder
+            .CreateResourceBuilder(builder.Resource.Parent)
+            .WithManagementPlugin();
+
         // Resolve which queues and exchanges this policy applies to at model-freeze time (BeforeStartEvent).
         // Using BeforeStartEvent (not AddPolicy call time) ensures that entities added after the policy are also matched.
         builder.ApplicationBuilder.Eventing.Subscribe<BeforeStartEvent>((@event, ct) =>
@@ -115,7 +120,12 @@ public static class RabbitMQPolicyExtensions
         string? policyName = null)
     {
         ArgumentNullException.ThrowIfNull(server);
-        return RabbitMQBuilderExtensions.GetOrAddDefaultVirtualHost(server).AddPolicy(name, pattern, applyTo, priority, policyName);
+        var vhostBuilder = RabbitMQBuilderExtensions.GetOrAddDefaultVirtualHost(server);
+
+        // Policies use the management HTTP API — ensure the management plugin is enabled (idempotent).
+        server.WithManagementPlugin();
+
+        return vhostBuilder.AddPolicy(name, pattern, applyTo, priority, policyName);
     }
 
     /// <summary>

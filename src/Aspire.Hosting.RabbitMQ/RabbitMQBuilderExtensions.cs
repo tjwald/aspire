@@ -261,7 +261,11 @@ public static class RabbitMQBuilderExtensions
 
         if (handled)
         {
-            builder.WithHttpEndpoint(port: port, targetPort: 15672, name: RabbitMQServerResource.ManagementEndpointName);
+            if (!builder.Resource.Annotations.OfType<EndpointAnnotation>()
+                .Any(e => e.Name == RabbitMQServerResource.ManagementEndpointName))
+            {
+                builder.WithHttpEndpoint(port: port, targetPort: 15672, name: RabbitMQServerResource.ManagementEndpointName);
+            }
 
             // Register the plugins that the management image bundles so that the enabled_plugins file
             // reflects the full set when WithPlugin is also called.

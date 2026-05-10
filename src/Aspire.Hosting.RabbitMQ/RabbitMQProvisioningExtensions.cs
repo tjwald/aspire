@@ -65,6 +65,11 @@ internal static class RabbitMQProvisioningExtensions
                 await provisionAsync(resource, client, logger, ct).ConfigureAwait(false);
                 await notifications.PublishUpdateAsync(resource, s => s with { State = KnownResourceStates.Running }).ConfigureAwait(false);
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                // Application is shutting down — do not log as error or transition to FailedToStart.
+                throw;
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to provision RabbitMQ resource '{ResourceName}'.", resource.Name);

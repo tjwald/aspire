@@ -191,11 +191,11 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
         private readonly SemaphoreSlim _gate = new(1, 1);
         private HttpClient? _http;
 
-        internal async ValueTask<IChannel> GetOrCreateChannelAsync(string vhost, CancellationToken ct)
+        private async ValueTask<(IConnection Connection, IChannel Channel)> GetOrCreateEntryAsync(string vhost, CancellationToken ct)
         {
             if (_channels.TryGetValue(vhost, out var existing) && existing.Item2.IsOpen)
             {
-                return existing.Item2;
+                return existing;
             }
 
             await _gate.WaitAsync(ct).ConfigureAwait(false);
@@ -203,7 +203,7 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
             {
                 if (_channels.TryGetValue(vhost, out var racy) && racy.Item2.IsOpen)
                 {
-                    return racy.Item2;
+                    return racy;
                 }
 
                 // Dispose the stale connection/channel before replacing it to avoid leaking resources.
@@ -217,8 +217,9 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
                 var f = new ConnectionFactory { Uri = new Uri(cs!), VirtualHost = vhost };
                 var conn = await f.CreateConnectionAsync(ct).ConfigureAwait(false);
                 var ch = await conn.CreateChannelAsync(cancellationToken: ct).ConfigureAwait(false);
-                _channels[vhost] = (conn, ch);
-                return ch;
+                var entry = (conn, ch);
+                _channels[vhost] = entry;
+                return entry;
             }
             finally
             {
@@ -226,11 +227,11 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
             }
         }
 
+        internal async ValueTask<IChannel> GetOrCreateChannelAsync(string vhost, CancellationToken ct)
+            => (await GetOrCreateEntryAsync(vhost, ct).ConfigureAwait(false)).Channel;
+
         internal async ValueTask<IConnection> GetOrCreateConnectionAsync(string vhost, CancellationToken ct)
-        {
-            await GetOrCreateChannelAsync(vhost, ct).ConfigureAwait(false);
-            return _channels[vhost].Item1;
-        }
+            => (await GetOrCreateEntryAsync(vhost, ct).ConfigureAwait(false)).Connection;
 
         internal async Task<bool> CanConnectAsync(string vhost, CancellationToken ct)
         {
@@ -265,7 +266,11 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
                         "Management endpoint is not exposed. Call WithManagementPlugin().");
                 var user = await server.UserNameReference.GetValueAsync(ct).ConfigureAwait(false);
                 var pass = await server.PasswordParameter.GetValueAsync(ct).ConfigureAwait(false);
-                _http = new HttpClient { BaseAddress = new Uri(mgmt) };
+                _http = new HttpClient
+                {
+                    BaseAddress = new Uri(mgmt),
+                    Timeout = TimeSpan.FromSeconds(30)
+                };
                 _http.DefaultRequestHeaders.Authorization =
                     new AuthenticationHeaderValue("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{pass}")));
                 return _http;
@@ -287,13 +292,13 @@ internal sealed class RabbitMQProvisioningClient : IRabbitMQProvisioningClient
                     try { await conn.DisposeAsync().ConfigureAwait(false); } catch { }
                 }
                 _channels.Clear();
+                _http?.Dispose();
             }
             finally
             {
                 _gate.Release();
+                _gate.Dispose();
             }
-            _http?.Dispose();
-            _gate.Dispose();
         }
     }
 }

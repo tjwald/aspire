@@ -19,15 +19,15 @@ public static class RabbitMQExchangeExtensions
     /// </summary>
     /// <param name="builder">The RabbitMQ virtual host resource builder.</param>
     /// <param name="name">The name of the resource.</param>
-    /// <param name="type">The type of the exchange. Defaults to <see cref="RabbitMQExchangeType.Direct"/>.</param>
     /// <param name="exchangeName">The name of the exchange. Defaults to the resource name when not provided.</param>
+    /// <param name="type">The type of the exchange. Defaults to <see cref="RabbitMQExchangeType.Direct"/>.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     [AspireExport(Description = "Adds an exchange to a RabbitMQ virtual host")]
     public static IResourceBuilder<RabbitMQExchangeResource> AddExchange(
         this IResourceBuilder<RabbitMQVirtualHostResource> builder,
         [ResourceName] string name,
-        RabbitMQExchangeType type = RabbitMQExchangeType.Direct,
-        string? exchangeName = null)
+        string? exchangeName = null,
+        RabbitMQExchangeType type = RabbitMQExchangeType.Direct)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrEmpty(name);
@@ -55,7 +55,7 @@ public static class RabbitMQExchangeExtensions
             bindingsKey,
             _ =>
             {
-                if (!bindingsDone)
+                if (!Volatile.Read(ref bindingsDone))
                 {
                     return Task.FromResult(HealthCheckResult.Unhealthy(
                         $"Bindings for exchange '{exchange.ExchangeName}' are not yet applied."));
@@ -122,7 +122,7 @@ public static class RabbitMQExchangeExtensions
                 })).ConfigureAwait(false);
 
                 // Fan-in complete — all bag writes are done before this line.
-                bindingsDone = true;
+                Volatile.Write(ref bindingsDone, true);
             })
             .WithHealthCheck(bindingsKey);
     }
@@ -132,18 +132,18 @@ public static class RabbitMQExchangeExtensions
     /// </summary>
     /// <param name="builder">The RabbitMQ server resource builder.</param>
     /// <param name="name">The name of the resource.</param>
-    /// <param name="type">The type of the exchange. Defaults to <see cref="RabbitMQExchangeType.Direct"/>.</param>
     /// <param name="exchangeName">The name of the exchange. Defaults to the resource name when not provided.</param>
+    /// <param name="type">The type of the exchange. Defaults to <see cref="RabbitMQExchangeType.Direct"/>.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
     [AspireExport("addExchangeOnServer", MethodName = "addExchange", Description = "Adds an exchange to the default '/' virtual host")]
     public static IResourceBuilder<RabbitMQExchangeResource> AddExchange(
         this IResourceBuilder<RabbitMQServerResource> builder,
         [ResourceName] string name,
-        RabbitMQExchangeType type = RabbitMQExchangeType.Direct,
-        string? exchangeName = null)
+        string? exchangeName = null,
+        RabbitMQExchangeType type = RabbitMQExchangeType.Direct)
     {
         ArgumentNullException.ThrowIfNull(builder);
-        return RabbitMQBuilderExtensions.GetOrAddDefaultVirtualHost(builder).AddExchange(name, type, exchangeName);
+        return RabbitMQBuilderExtensions.GetOrAddDefaultVirtualHost(builder).AddExchange(name, exchangeName, type);
     }
 
     /// <summary>
