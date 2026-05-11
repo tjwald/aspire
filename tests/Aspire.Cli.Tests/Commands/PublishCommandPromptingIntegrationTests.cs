@@ -832,12 +832,6 @@ internal sealed class TestPromptBackchannel : IAppHostCliBackchannel
     public Task ConnectAsync(string socketPath, bool autoReconnect, int retryCount, CancellationToken cancellationToken) => Task.CompletedTask;
     public Task<string[]> GetCapabilitiesAsync(CancellationToken cancellationToken) => Task.FromResult(new[] { "baseline.v2" });
 
-    public async IAsyncEnumerable<CommandOutput> ExecAsync([EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await Task.CompletedTask; // Suppress CS1998
-        yield break;
-    }
-
     public Task<GetPipelineStepsResponse> GetPipelineStepsAsync(string? step, CancellationToken cancellationToken) =>
         Task.FromResult(new GetPipelineStepsResponse { Steps = [] });
 }
@@ -855,6 +849,7 @@ internal sealed class TestConsoleInteractionServiceWithPromptTracking : IInterac
     private bool _shouldCancel;
 
     public ConsoleOutput Console { get; set; }
+    public bool SupportsLinks { get; set; }
     public List<StringPromptCall> StringPromptCalls { get; } = [];
     public List<object> SelectionPromptCalls { get; } = []; // Using object to handle generic types
     public List<BooleanPromptCall> BooleanPromptCalls { get; } = [];
