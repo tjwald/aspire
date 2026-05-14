@@ -23,6 +23,15 @@ internal sealed class RabbitMQProvisionableHealthCheck(
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
+        // Stage 1: ensure this resource itself has reached the Running state before probing.
+        // Without this guard, the health check would attempt live broker calls for resources
+        // that haven't been provisioned yet, producing confusing errors in the dashboard.
+        if (!notifications.TryGetCurrentState(self.Name, out var selfEvt) ||
+            selfEvt.Snapshot.State?.Text != KnownResourceStates.Running)
+        {
+            return HealthCheckResult.Unhealthy($"'{self.Name}' is not yet Running.");
+        }
+
         foreach (var dep in self.HealthDependencies)
         {
             if (!notifications.TryGetCurrentState(dep.Name, out var depEvt) || depEvt.Snapshot.HealthStatus != HealthStatus.Healthy)
